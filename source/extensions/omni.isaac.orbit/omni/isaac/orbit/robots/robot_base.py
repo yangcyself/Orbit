@@ -136,7 +136,7 @@ class RobotBase:
         # apply collision properties
         kit_utils.set_nested_collision_properties(prim_path, **self.cfg.collision_props.to_dict())
         # articulation root settings
-        kit_utils.set_articulation_properties(prim_path, **self.cfg.articulation_props.to_dict())
+        kit_utils.set_articulation_properties(prim_path+"/elevator", **self.cfg.articulation_props.to_dict())
         # set spawned to true
         self._is_spawned = True
 
