@@ -42,6 +42,11 @@ from omni.isaac.orbit.actuators.group import ActuatorGroupCfg
 from omni.isaac.orbit.actuators.group.actuator_group_cfg import ActuatorControlCfg
 from omni.isaac.orbit.actuators.model import ImplicitActuatorCfg
 
+import numpy as np
+
+from omni.isaac.orbit.robots.config.anymal import ANYMAL_B_CFG, ANYMAL_C_CFG
+from omni.isaac.orbit.robots.legged_robot import LeggedRobot
+
 def main():
     """Spawns a single arm manipulator and applies random joint commands."""
 
@@ -70,7 +75,7 @@ def main():
     
     robot_cfg = RobotBaseCfg(
     meta_info=RobotBaseCfg.MetaInfoCfg(
-        usd_path="/home/chenyu/opt/orbit/source/standalone/elevator.usd",
+        usd_path="/home/chenyu/opt/orbit/source/standalone/elevator1.usd",
     ),
     init_state=RobotBaseCfg.InitialStateCfg(
         dof_pos={".*": 0.0},
@@ -91,15 +96,20 @@ def main():
 
     # -- Spawn robot
     robot = RobotBase(cfg=robot_cfg)
-    robot.spawn("/World/elevator_1", translation=(0.0, 0, 0.0))
+    robot.spawn("/World/elevator_1", translation=(0.0, 0, 0.0), orientation=(np.sqrt(1/2), np.sqrt(1/2), 0, 0.0))
+
+    robot_c = LeggedRobot(cfg=ANYMAL_C_CFG)
+    robot_c.spawn("/World/Anymal_c/Robot_1", translation=(1.5, -1.5, 0.65))
 
     # Play the simulator
     sim.reset()
     # Acquire handles
     # Initialize handles
-    robot.initialize("/World/elevator_1/elevator")
+    robot.initialize("/World/elevator_1")
+    robot_c.initialize("/World/Anymal_c/Robot_1")
     # Reset states
     robot.reset_buffers()
+    robot_c.reset_buffers()
 
     # Now we are ready!
     print("[INFO]: Setup complete...")
@@ -128,14 +138,23 @@ def main():
             # reset dof state
             dof_pos, dof_vel = robot.get_default_dof_state()
             robot.set_dof_state(dof_pos, dof_vel)
+            print("dof_posshape", dof_pos.shape)
             robot.reset_buffers()
             # reset command
             actions = torch.rand(robot.count, robot.num_actions, device=robot.device)
 
             print("[INFO]: Resetting robots state...")
+
+            dof_pos_c, dof_vel_c = robot_c.get_default_dof_state()
+            robot_c.set_dof_state(dof_pos_c, dof_vel_c)
+            robot_c.reset_buffers()
+            actions_c = torch.zeros(robot_c.count, robot_c.num_actions, device=robot_c.device)
+
         
         # apply action to the robot
-        robot.apply_action(actions)
+        # robot.apply_action(actions)
+        robot.set_dof_state(dof_pos+torch.tensor([1,-1,1,-1]) * ep_step_count/1000 * 0.8, dof_vel)
+        robot_c.apply_action(actions_c)
         # perform step
         sim.step()
         # update sim-time
@@ -145,6 +164,7 @@ def main():
         if sim.is_playing():
             # update buffers
             robot.update_buffers(sim_dt)
+            robot_c.update_buffers(sim_dt)
 
 
 if __name__ == "__main__":
