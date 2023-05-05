@@ -190,8 +190,11 @@ def get_relative_transform(xform_prim_a, xform_prim_b):
 xform = UsdGeom.Xformable(prim)
 # Get the local transformation matrix
 local_transform = xform.GetLocalTransformation()
-print("Translation", local_transform.ExtractTranslation())
-print("Rotation", local_transform.ExtractRotation())
+print("Translation", local_transform.ExtractTranslation()) # (0, 0, 0)
+print("Rotation", local_transform.ExtractRotation())# [(1, 0, 0) 0]
+print("tuple Translation", tuple(local_transform.ExtractTranslation())) # (0, 0, 0)
+quat = local_transform.ExtractRotation().GetQuat()
+print("tuple Rotation", (quat.real, *quat.imaginary)) # (1.0, 0.0, 0.0, 0.0)
 
 
 mirror_prim = stage.GetPrimAtPath("/elevator/ElevatorCage_11/Mirror_9")
