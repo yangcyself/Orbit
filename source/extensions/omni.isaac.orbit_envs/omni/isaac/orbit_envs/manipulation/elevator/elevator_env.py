@@ -38,6 +38,8 @@ class Elevator:
     def __init__(self):
         self._is_spawned = False
         self._door_state = None  # 0: closed, 1: open
+        self._door_pos_targets = None
+        self._dof_default_pos = None
 
     """
     Properties
@@ -109,6 +111,10 @@ class Elevator:
         # set the default state
         self.articulations.post_reset()
         self._door_state = torch.zeros(self.count, dtype=torch.bool, device=self.device)
+        self._dof_default_targets = self.articulations._physics_view.get_dof_position_targets()
+        self._dof_pos = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
+        print("DoF Name",self.articulations.dof_names)
+        # print("DoF Default Targets",self._dof_default_targets) # TODO: check if this is correct
 
     def setDoorState(self, toopen=True, env_ids: Optional[Sequence[int]] = None):
         if env_ids is None:
@@ -116,11 +122,15 @@ class Elevator:
         elif len(env_ids) == 0:
             return
         self._door_state[env_ids] = bool(toopen)
-        dof_pos_targets = (
+        self._door_pos_targets = (
             torch.Tensor([[1.0, -1.0, 1.0, -1.0]]).to(self.device) * torch.where(self._door_state[..., None], 0.8, 0.0)
         ).to(self.device)
-        self.articulations._physics_view.set_dof_position_targets(dof_pos_targets, self.all_mask)
+        dof_targets = self._dof_default_targets.clone()
+        dof_targets[:,:4] = self._door_pos_targets
+        self.articulations._physics_view.set_dof_position_targets(dof_targets, self.all_mask)
 
+    def update_buffers(self, dt: float):
+        self._dof_pos[:] = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
 
 class ElevatorEnv(IsaacEnv):
     """Environment for reaching to desired pose for a single-arm manipulator."""
@@ -162,6 +172,7 @@ class ElevatorEnv(IsaacEnv):
         self.sim.step()
         # -- fill up buffers
         self.robot.update_buffers(self.dt)
+        self.elevator.update_buffers(self.dt)
 
     """
     Implementation specifics.
@@ -176,7 +187,7 @@ class ElevatorEnv(IsaacEnv):
         self.robot.spawn(self.template_env_ns + "/Robot")
         self.elevator.spawn(
             self.template_env_ns + "/Elevator",
-            translation=(0.5, -2.0, 0.0),
+            translation=(1.5, -2.0, 0.0),
             orientation=(sqrt(1 / 2), 0.0, 0.0, sqrt(1 / 2)),
         )
 
@@ -263,7 +274,9 @@ class ElevatorEnv(IsaacEnv):
         self.previous_actions = self.actions.clone()
 
         # Elevator state update
-        door_open_mask = torch.norm(self.ee_des_pose_w[:, :3] - self.robot.data.ee_state_w[:, 0:3], dim=1) < 0.02
+        # door_open_mask = torch.norm(self.ee_des_pose_w[:, :3] - self.robot.data.ee_state_w[:, 0:3], dim=1) < 0.02
+        print("buttons pos",self.elevator._dof_pos[:,-2:])
+        door_open_mask = (self.elevator._dof_pos[:, -2] < 0) | (self.elevator._dof_pos[:, -1] < 0)
         self.elevator.setDoorState(True, self.elevator.all_mask[door_open_mask])
         self.elevator.setDoorState(False, self.elevator.all_mask[~door_open_mask])
 
