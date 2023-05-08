@@ -92,3 +92,9 @@ gym.register(
     entry_point="omni.isaac.orbit_envs.manipulation.lift:LiftEnv",
     kwargs={"cfg_entry_point": "omni.isaac.orbit_envs.manipulation.lift:LiftEnvCfg"},
 )
+
+gym.register(
+    id="Isaac-Elevator-Franka-v0",
+    entry_point="omni.isaac.orbit_envs.manipulation.elevator:ElevatorEnv",
+    kwargs={"cfg_entry_point": "omni.isaac.orbit_envs.manipulation.elevator:ElevatorEnvCfg"},
+)
