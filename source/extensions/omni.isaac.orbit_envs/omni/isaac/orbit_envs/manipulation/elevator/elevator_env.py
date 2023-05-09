@@ -186,7 +186,7 @@ class ElevatorEnv(IsaacEnv):
         kit_utils.create_ground_plane("/World/defaultGroundPlane", z_position=-1.05)
 
         # robot
-        self.robot.spawn(self.template_env_ns + "/Robot", translation=(0,0,-0.5))
+        self.robot.spawn(self.template_env_ns + "/Robot", translation=(0, 0, -0.5))
         self.elevator.spawn(
             self.template_env_ns + "/Elevator",
             translation=(1.5, -2.0, 0.0),
@@ -241,20 +241,24 @@ class ElevatorEnv(IsaacEnv):
         # transform actions based on controller
         if self.cfg.control.control_type == "inverse_kinematics":
             # set the controller commands
-            self._ik_controller.set_command(self.actions[:, 3:-1])
+            self._ik_controller.set_command(self.actions[:, self.robot.base_num_dof : -1])
             # compute the joint commands
-            self.robot_actions[:, 3 : 3 + self.robot.arm_num_dof] = self._ik_controller.compute(
+            self.robot_actions[
+                :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
+            ] = self._ik_controller.compute(
                 self.robot.data.ee_state_w[:, 0:3] - self.envs_positions,
                 self.robot.data.ee_state_w[:, 3:7],
                 self.robot.data.ee_jacobian,
                 self.robot.data.arm_dof_pos,
             )
             # offset actuator command with position offsets
-            self.robot_actions[:,  3 : 3 + self.robot.arm_num_dof] -= self.robot.data.actuator_pos_offset[
-                :,  3 : 3 + self.robot.arm_num_dof
+            self.robot_actions[
+                :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
+            ] -= self.robot.data.actuator_pos_offset[
+                :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
             ]
-            # we assume the first three is base command so don't change that
-            self.robot_actions[:, :3] = self.actions[:, :3]
+            # we assume the first is base command so don't change that
+            self.robot_actions[:, : self.robot.base_num_dof] = self.actions[:, : self.robot.base_num_dof]
             # we assume last command is tool action so don't change that
             self.robot_actions[:, -1] = self.actions[:, -1]
         elif self.cfg.control.control_type == "default":

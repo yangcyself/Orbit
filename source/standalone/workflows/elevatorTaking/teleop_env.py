@@ -33,7 +33,7 @@ import torch
 
 import carb
 
-from omni.isaac.orbit.devices import Se3Gamepad, Se2Keyboard, Se3SpaceMouse
+from omni.isaac.orbit.devices import Se2Keyboard, Se3Gamepad
 
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
@@ -71,7 +71,9 @@ def main():
             pos_sensitivity=0.1 * args_cli.sensitivity, rot_sensitivity=0.1 * args_cli.sensitivity
         )
         teleop_interface_base = Se2Keyboard(
-            v_x_sensitivity=0.2 * args_cli.sensitivity, v_y_sensitivity=0.2 * args_cli.sensitivity, omega_z_sensitivity=0.2 * args_cli.sensitivity
+            v_x_sensitivity=0.2 * args_cli.sensitivity,
+            v_y_sensitivity=0.2 * args_cli.sensitivity,
+            omega_z_sensitivity=0.2 * args_cli.sensitivity,
         )
     else:
         raise ValueError(f"Invalid device interface '{args_cli.device}'. Supported: 'keyboard', 'spacemouse'.")
