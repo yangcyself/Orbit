@@ -19,7 +19,7 @@ from pxr import Gf
 import omni.isaac.orbit.utils.kit as kit_utils
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematics
 from omni.isaac.orbit.markers import PointMarker, StaticMarker
-from omni.isaac.orbit.robots.single_arm import SingleArmManipulator
+from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
 from omni.isaac.orbit.utils.dict import class_to_dict
 from omni.isaac.orbit.utils.math import random_orientation, sample_uniform, scale_transform
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
@@ -145,7 +145,7 @@ class ElevatorEnv(IsaacEnv):
         # note: controller decides the robot control mode
         self._pre_process_cfg()
         # create classes (these are called by the function :meth:`_design_scene`
-        self.robot = SingleArmManipulator(cfg=self.cfg.robot)
+        self.robot = MobileManipulator(cfg=self.cfg.robot)
         self.elevator = Elevator()
 
         # initialize the base class to setup the scene.
@@ -184,10 +184,9 @@ class ElevatorEnv(IsaacEnv):
     def _design_scene(self):
         # ground plane
         kit_utils.create_ground_plane("/World/defaultGroundPlane", z_position=-1.05)
-        # table
-        prim_utils.create_prim(self.template_env_ns + "/Table", usd_path=self.cfg.table.usd_path)
+
         # robot
-        self.robot.spawn(self.template_env_ns + "/Robot")
+        self.robot.spawn(self.template_env_ns + "/Robot", translation=(0,0,-0.5))
         self.elevator.spawn(
             self.template_env_ns + "/Elevator",
             translation=(1.5, -2.0, 0.0),
@@ -242,18 +241,20 @@ class ElevatorEnv(IsaacEnv):
         # transform actions based on controller
         if self.cfg.control.control_type == "inverse_kinematics":
             # set the controller commands
-            self._ik_controller.set_command(self.actions[:, :-1])
+            self._ik_controller.set_command(self.actions[:, 3:-1])
             # compute the joint commands
-            self.robot_actions[:, : self.robot.arm_num_dof] = self._ik_controller.compute(
+            self.robot_actions[:, 3 : 3 + self.robot.arm_num_dof] = self._ik_controller.compute(
                 self.robot.data.ee_state_w[:, 0:3] - self.envs_positions,
                 self.robot.data.ee_state_w[:, 3:7],
                 self.robot.data.ee_jacobian,
                 self.robot.data.arm_dof_pos,
             )
             # offset actuator command with position offsets
-            self.robot_actions[:, : self.robot.arm_num_dof] -= self.robot.data.actuator_pos_offset[
-                :, : self.robot.arm_num_dof
+            self.robot_actions[:,  3 : 3 + self.robot.arm_num_dof] -= self.robot.data.actuator_pos_offset[
+                :,  3 : 3 + self.robot.arm_num_dof
             ]
+            # we assume the first three is base command so don't change that
+            self.robot_actions[:, :3] = self.actions[:, :3]
             # we assume last command is tool action so don't change that
             self.robot_actions[:, -1] = self.actions[:, -1]
         elif self.cfg.control.control_type == "default":
@@ -341,11 +342,9 @@ class ElevatorEnv(IsaacEnv):
             self._ik_controller = DifferentialInverseKinematics(
                 self.cfg.control.inverse_kinematics, self.robot.count, self.device
             )
-            # note: we exclude gripper from actions in this env
-            self.num_actions = self._ik_controller.num_actions + 1
+            self.num_actions = self.robot.base_num_dof + self._ik_controller.num_actions + 1
         elif self.cfg.control.control_type == "default":
-            # note: we exclude gripper from actions in this env
-            self.num_actions = self.robot.arm_num_dof
+            self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof + 1
 
         # history
         self.actions = torch.zeros((self.num_envs, self.num_actions), device=self.device)

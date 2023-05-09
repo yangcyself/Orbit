@@ -4,8 +4,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematicsCfg
-from omni.isaac.orbit.robots.config.franka import FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
-from omni.isaac.orbit.robots.single_arm import SingleArmManipulatorCfg
+from omni.isaac.orbit.robots.config.ridgeback_franka import RIDGEBACK_FRANKA_PANDA_CFG
+from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulatorCfg
 from omni.isaac.orbit.utils import configclass
 from omni.isaac.orbit.utils.assets import ISAAC_NUCLEUS_DIR
 
@@ -138,7 +138,7 @@ class ElevatorEnvCfg(IsaacEnvCfg):
     sim: SimCfg = SimCfg(dt=1.0 / 60.0, substeps=1)
 
     # Scene Settings
-    robot: SingleArmManipulatorCfg = FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
+    robot: MobileManipulatorCfg = RIDGEBACK_FRANKA_PANDA_CFG
     table: TableCfg = TableCfg()
     marker: MarkerCfg = MarkerCfg()
 
