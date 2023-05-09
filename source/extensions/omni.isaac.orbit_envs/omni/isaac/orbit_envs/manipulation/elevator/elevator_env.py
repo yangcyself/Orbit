@@ -11,6 +11,7 @@ from math import sqrt
 # Modules for Elevator
 from typing import Optional, Sequence  # Dict, List, Tuple, Union
 
+import carb
 import omni.isaac.core.utils.prims as prim_utils
 from omni.isaac.core.articulations import ArticulationView
 from pxr import Gf
@@ -65,6 +66,7 @@ class Elevator:
         return torch.arange(self.count, dtype=torch.long, device=self.device)
 
     def spawn(self, prim_path: str, translation: Sequence[float] = None, orientation: Sequence[float] = None):
+        # Hard code a basic transformation for the elevator
         internal_translation = (0.0, 0.0, 0.69)
         internal_orientation = (sqrt(1 / 2), sqrt(1 / 2), 0, 0.0)
         internal_transform = Gf.Matrix4d()
@@ -113,8 +115,8 @@ class Elevator:
         self._door_state = torch.zeros(self.count, dtype=torch.bool, device=self.device)
         self._dof_default_targets = self.articulations._physics_view.get_dof_position_targets()
         self._dof_pos = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
-        print("DoF Name",self.articulations.dof_names)
-        # print("DoF Default Targets",self._dof_default_targets) # TODO: check if this is correct
+        print("DoF Name", self.articulations.dof_names)
+        # DoF Name ['PJoint_LO_Door', 'PJoint_RO_Door', 'PJoint_LI_Door', 'PJoint_RI_Door', 'PJoint_OU_Btn', 'PJoint_OD_Btn']
 
     def setDoorState(self, toopen=True, env_ids: Optional[Sequence[int]] = None):
         if env_ids is None:
@@ -126,11 +128,12 @@ class Elevator:
             torch.Tensor([[1.0, -1.0, 1.0, -1.0]]).to(self.device) * torch.where(self._door_state[..., None], 0.8, 0.0)
         ).to(self.device)
         dof_targets = self._dof_default_targets.clone()
-        dof_targets[:,:4] = self._door_pos_targets
+        dof_targets[:, :4] = self._door_pos_targets
         self.articulations._physics_view.set_dof_position_targets(dof_targets, self.all_mask)
 
     def update_buffers(self, dt: float):
         self._dof_pos[:] = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
+
 
 class ElevatorEnv(IsaacEnv):
     """Environment for reaching to desired pose for a single-arm manipulator."""
@@ -239,7 +242,7 @@ class ElevatorEnv(IsaacEnv):
         # transform actions based on controller
         if self.cfg.control.control_type == "inverse_kinematics":
             # set the controller commands
-            self._ik_controller.set_command(self.actions)
+            self._ik_controller.set_command(self.actions[:, :-1])
             # compute the joint commands
             self.robot_actions[:, : self.robot.arm_num_dof] = self._ik_controller.compute(
                 self.robot.data.ee_state_w[:, 0:3] - self.envs_positions,
@@ -251,8 +254,10 @@ class ElevatorEnv(IsaacEnv):
             self.robot_actions[:, : self.robot.arm_num_dof] -= self.robot.data.actuator_pos_offset[
                 :, : self.robot.arm_num_dof
             ]
+            # we assume last command is tool action so don't change that
+            self.robot_actions[:, -1] = self.actions[:, -1]
         elif self.cfg.control.control_type == "default":
-            self.robot_actions[:, : self.robot.arm_num_dof] = self.actions
+            self.robot_actions[:, :] = self.actions
         # perform physics stepping
         for _ in range(self.cfg.control.decimation):
             # set actions into buffers
@@ -265,6 +270,7 @@ class ElevatorEnv(IsaacEnv):
         # post-step:
         # -- compute common buffers
         self.robot.update_buffers(self.dt)
+        self.elevator.update_buffers(self.dt)
         # -- compute MDP signals
         # reward
         self.reward_buf = self._reward_manager.compute()
@@ -274,11 +280,8 @@ class ElevatorEnv(IsaacEnv):
         self.previous_actions = self.actions.clone()
 
         # Elevator state update
-        # door_open_mask = torch.norm(self.ee_des_pose_w[:, :3] - self.robot.data.ee_state_w[:, 0:3], dim=1) < 0.02
-        print("buttons pos",self.elevator._dof_pos[:,-2:])
-        door_open_mask = (self.elevator._dof_pos[:, -2] < 0) | (self.elevator._dof_pos[:, -1] < 0)
-        self.elevator.setDoorState(True, self.elevator.all_mask[door_open_mask])
-        self.elevator.setDoorState(False, self.elevator.all_mask[~door_open_mask])
+        self.elevator.setDoorState(True, self.elevator.all_mask[(self.elevator._dof_pos[:, -2] < 0)])
+        self.elevator.setDoorState(False, self.elevator.all_mask[(self.elevator._dof_pos[:, -1] < 0)])
 
         # -- add information to extra if timeout occurred due to episode length
         # Note: this is used by algorithms like PPO where time-outs are handled differently
@@ -339,7 +342,7 @@ class ElevatorEnv(IsaacEnv):
                 self.cfg.control.inverse_kinematics, self.robot.count, self.device
             )
             # note: we exclude gripper from actions in this env
-            self.num_actions = self._ik_controller.num_actions
+            self.num_actions = self._ik_controller.num_actions + 1
         elif self.cfg.control.control_type == "default":
             # note: we exclude gripper from actions in this env
             self.num_actions = self.robot.arm_num_dof
@@ -463,4 +466,4 @@ class ElevatorRewardManager(RewardManager):
 
     def penalizing_action_rate_l2(self, env: ElevatorEnv):
         """Penalize large variations in action commands."""
-        return torch.sum(torch.square(env.actions - env.previous_actions), dim=1)
+        return torch.sum(torch.square(env.actions[:, :-1] - env.previous_actions[:, :-1]), dim=1)

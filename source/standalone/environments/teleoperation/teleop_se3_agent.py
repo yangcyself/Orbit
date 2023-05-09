@@ -44,7 +44,7 @@ from omni.isaac.orbit_envs.utils import parse_env_cfg
 def pre_process_actions(delta_pose: torch.Tensor, gripper_command: bool) -> torch.Tensor:
     """Pre-process actions for the environment."""
     # compute actions based on environment
-    if "Reach" in args_cli.task or "Elevator" in args_cli.task:
+    if "Reach" in args_cli.task:
         # note: reach is the only one that uses a different action space
         # compute actions
         return delta_pose
