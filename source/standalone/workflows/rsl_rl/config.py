@@ -20,6 +20,7 @@ RSLRL_PPO_CONFIG_FILE = {
     # manipulation
     "Isaac-Lift-Franka-v0": os.path.join(ORBIT_ENVS_DATA_DIR, "rsl_rl/lift_ppo.yaml"),
     "Isaac-Reach-Franka-v0": os.path.join(ORBIT_ENVS_DATA_DIR, "rsl_rl/reach_ppo.yaml"),
+    "Isaac-Elevator-Franka-v0": os.path.join(ORBIT_ENVS_DATA_DIR, "rsl_rl/elevator_ppo.yaml"),
     # locomotion
     "Isaac-Velocity-Anymal-C-v0": os.path.join(ORBIT_ENVS_DATA_DIR, "rsl_rl/anymal_ppo.yaml"),
 }
