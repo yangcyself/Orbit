@@ -136,9 +136,13 @@ class Elevator:
 
 
 class ElevatorEnv(IsaacEnv):
-    """Environment for reaching to desired pose for a single-arm manipulator."""
+    """Initializes the of a mobileManipulator and an elevator
 
-    def __init__(self, cfg: ElevatorEnvCfg = None, headless: bool = False):
+    Args:
+        cfg (ElevatorEnvCfg): The configuration dictionary.
+        kwargs (dict): Additional keyword arguments. See IsaacEnv for more details.
+    """
+    def __init__(self, cfg: ElevatorEnvCfg = None, **kwargs):
         # copy configuration
         self.cfg = cfg
         # parse the configuration for controller configuration
@@ -149,7 +153,7 @@ class ElevatorEnv(IsaacEnv):
         self.elevator = Elevator()
 
         # initialize the base class to setup the scene.
-        super().__init__(self.cfg, headless=headless)
+        super().__init__(self.cfg, **kwargs)
         # parse the configuration for information
         self._process_cfg()
         # initialize views for the cloned scenes

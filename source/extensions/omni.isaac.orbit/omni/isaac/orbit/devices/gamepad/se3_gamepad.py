@@ -29,35 +29,40 @@ class Se3Gamepad(DeviceBase):
     * gripper: a binary command to open or close the gripper.
 
     Stick and Button bindings:
-    ================================= ================================ ================================
-    Description                        Stick/Button (+ve axis)         Stick/Button (-ve axis)
-    ================================= ================================ ================================
-    Toggle gripper                     B Button (open)                 A Button (close)
-    Move along x-axis                  Left Stick Up                   Left Stick Down
-    Move along y-axis                  Left Stick Left                 Left Stick Right
-    Move along z-axis                  Right Stick Up                  Right Stick Down
-    Rotate along x-axis                D-Pad Right                     D-Pad Left
-    Rotate along y-axis                D-Pad Up                        D-Pad Down
-    Rotate along z-axis                Right Stick Left                Right Stick Right
-    ================================= ================================ ================================
+        ============================ ========================= =========================
+        Description                  Stick/Button (+ve axis)   Stick/Button (-ve axis)
+        ============================ ========================= =========================
+        Toggle gripper(open/close)   X Button                  X Button
+        Move along x-axis            Left Stick Up             Left Stick Down
+        Move along y-axis            Left Stick Left           Left Stick Right
+        Move along z-axis            Right Stick Up            Right Stick Down
+        Rotate along x-axis          D-Pad Left                D-Pad Right
+        Rotate along y-axis          D-Pad Down                D-Pad Up
+        Rotate along z-axis          Right Stick Left          Right Stick Right
+        ============================ ========================= =========================
 
+    .. seealso::
 
-    Reference:
-        https://docs.omniverse.nvidia.com/kit/docs/carbonite/latest/docs/python/carb.html#carb.input.Gamepad
+        The official documentation for the gamepad interface: `Carb Gamepad Interface <https://docs.omniverse.nvidia.com/kit/docs/carbonite/latest/docs/python/carb.html#carb.input.Gamepad>`__.
+
     """
 
-    def __init__(self, pos_sensitivity: float = 1, rot_sensitivity: float = 2, deadzone: float = 0.01):
+    def __init__(self, pos_sensitivity: float = 1.0, rot_sensitivity: float = 1.6, dead_zone: float = 0.01):
         """Initialize the gamepad layer.
 
         Args:
-            pos_sensitivity (float): Magnitude of input position command scaling. Defaults to 1.
-            rot_sensitivity (float): Magnitude of scale input rotation commands scaling. Defaults to 2.
-            deadzone (float): Magnitude of deadzone for gamepad input. Defaults to 0.01.
+            pos_sensitivity (float): Magnitude of input position command scaling. Defaults to 1.0.
+            rot_sensitivity (float): Magnitude of scale input rotation commands scaling. Defaults to 1.6.
+            dead_zone (float): Magnitude of dead zone for gamepad. An event value from the gamepad less than
+                this value will be ignored. Defaults to 0.01.
         """
+        # turn off simulator gamepad control
+        carb_settings_iface = carb.settings.get_settings()
+        carb_settings_iface.set_bool("/persistent/app/omniverse/gamepadCameraControl", False)
         # store inputs
         self.pos_sensitivity = pos_sensitivity
         self.rot_sensitivity = rot_sensitivity
-        self.deadzone = deadzone
+        self.dead_zone = dead_zone
         # acquire omniverse interfaces
         self._appwindow = omni.appwindow.get_default_app_window()
         self._input = carb.input.acquire_input_interface()
@@ -67,20 +72,32 @@ class Se3Gamepad(DeviceBase):
         self._create_key_bindings()
         # command buffers
         self._close_gripper = False
-        self._delta_pos = np.zeros(3)  # (x, y, z)
-        self._delta_rot = np.zeros(3)  # (roll, pitch, yaw)
+        # When using the gamepad, two values are provided for each axis.
+        # For example: when the left stick is moved down, there are two evens: `left_stick_down = 0.8`
+        #   and `left_stick_up = 0.0`. If only the value of left_stick_up is used, the value will be 0.0,
+        #   which is not the desired behavior. Therefore, we save both the values into the buffer and use
+        #   the maximum value.
+        # (positive, negative), (x, y, z, roll, pitch, yaw)
+        self._delta_pose_raw = np.zeros([2, 6])
         # dictionary for additional callbacks
         self._additional_callbacks = dict()
+
+    def __del__(self):
+        """Unsubscribe from gamepad events."""
+        self._input.unsubscribe_from_gamepad_events(self._gamepad, self._gamepad_sub)
+        self._gamepad_sub = None
 
     def __str__(self) -> str:
         """Returns: A string containing the information of joystick."""
         msg = f"Gamepad Controller for SE(3): {self.__class__.__name__}\n"
-        msg += "\tToggle gripper (open/close): B/A\n"
+        msg += f"\tDevice name: {self._input.get_gamepad_name(self._gamepad)}\n"
+        msg += "\t----------------------------------------------\n"
+        msg += "\tToggle gripper (open/close): X\n"
         msg += "\tMove arm along x-axis: Left Stick Up/Down\n"
         msg += "\tMove arm along y-axis: Left Stick Left/Right\n"
         msg += "\tMove arm along z-axis: Right Stick Up/Down\n"
-        msg += "\tRotate arm along x-axis: D-Pad Left/Right\n"
-        msg += "\tRotate arm along y-axis: D-Pad Up/Down\n"
+        msg += "\tRotate arm along x-axis: D-Pad Right/Left\n"
+        msg += "\tRotate arm along y-axis: D-Pad Down/Up\n"
         msg += "\tRotate arm along z-axis: Right Stick Left/Right\n"
         return msg
 
@@ -91,20 +108,18 @@ class Se3Gamepad(DeviceBase):
     def reset(self):
         # default flags
         self._close_gripper = False
-        self._delta_pos = np.zeros([2, 3])  # (pos, neg) (x, y, z)
-        self._delta_rot = np.zeros([2, 3])  # (pos, neg) (roll, pitch, yaw)
+        self._delta_pose_raw.fill(0.0)
 
-    def add_callback(self, key: str, func: Callable):
+    def add_callback(self, key: carb.input.GamepadInput, func: Callable):
         """Add additional functions to bind gamepad.
 
-        A list of available keys are present in the
-        `carb documentation <https://docs.omniverse.nvidia.com/kit/docs/carbonite/latest/docs/python/carb.html?highlight=gamepadeventtype#carb.input.GamepadInput>`_.
-
-        The callback function should not take any arguments.
+        A list of available gamepad keys are present in the
+        `carb documentation <https://docs.omniverse.nvidia.com/kit/docs/carbonite/latest/docs/python/carb.html?highlight=gamepadeventtype#carb.input.GamepadInput>`__.
 
         Args:
-            key (str): The gamepad button to check against.
-            func (Callable): The function to call when key is pressed.
+            key (carb.input.GamepadInput): The gamepad button to check against.
+            func (Callable): The function to call when key is pressed. The callback function should not
+                take any arguments.
         """
         self._additional_callbacks[key] = func
 
@@ -112,17 +127,15 @@ class Se3Gamepad(DeviceBase):
         """Provides the result from gamepad event state.
 
         Returns:
-            Tuple[np.ndarray, bool] -- A tuple containing the delta pose command and gripper commands.
+            Tuple[np.ndarray, bool]: A tuple containing the delta pose command and gripper commands.
         """
-        delta_rot_sgn = self._delta_rot[0, :] > self._delta_rot[1, :]
-        delta_rot = self._delta_rot.max(axis=0)
-        delta_rot[~delta_rot_sgn] *= -1
-        delta_pos_sgn = self._delta_pos[0, :] > self._delta_pos[1, :]
-        delta_pos = self._delta_pos.max(axis=0)
-        delta_pos[~delta_pos_sgn] *= -1
-
+        # -- resolve position command
+        delta_pos = self._resolve_command_buffer(self._delta_pose_raw[:, :3])
+        # -- resolve rotation command
+        delta_rot = self._resolve_command_buffer(self._delta_pose_raw[:, 3:])
+        # -- convert to rotation vector
         rot_vec = Rotation.from_euler("XYZ", delta_rot).as_rotvec()
-        # if new command received, reset event flag to False until gamepad updated.
+        # return the command and gripper state
         return np.concatenate([delta_pos, rot_vec]), self._close_gripper
 
     """
@@ -135,41 +148,43 @@ class Se3Gamepad(DeviceBase):
         Reference:
             https://docs.omniverse.nvidia.com/kit/docs/carbonite/latest/docs/python/carb.html?highlight=gamepadeventtype#carb.input.Gamepad
         """
-
+        # check if the event is a button press
         cur_val = event.value
-        absval = abs(event.value)
-
-        # Ignore 0 since it signifies the movement  of the stick has stopped,
-        # but doesn't mean it's at center...could be being held steady
-
-        if absval < self.deadzone:
+        if abs(cur_val) < self.dead_zone:
             cur_val = 0
-
-        if event.input == carb.input.GamepadInput.A:
+        # -- button
+        if event.input == carb.input.GamepadInput.X:
+            # toggle gripper based on the button pressed
             if cur_val > 0.5:
-                self._close_gripper = True
-        elif event.input == carb.input.GamepadInput.B:
+                self._close_gripper = not self._close_gripper
+        # -- left and right stick
+        if event.input in self._INPUT_STICK_VALUE_MAPPING:
+            direction, axis, value = self._INPUT_STICK_VALUE_MAPPING[event.input]
+            # change the value only if the stick is moved (soft press)
+            self._delta_pose_raw[direction, axis] = value * cur_val
+        # -- dpad (4 arrow buttons on the console)
+        if event.input in self._INPUT_DPAD_VALUE_MAPPING:
+            direction, axis, value = self._INPUT_DPAD_VALUE_MAPPING[event.input]
+            # change the value only if button is pressed on the DPAD
             if cur_val > 0.5:
-                self._close_gripper = False
-        elif event.input in self._INPUT_KEY_POS_VALUE_MAPPING:
-            i, j, v = self._INPUT_KEY_POS_VALUE_MAPPING[event.input]
-            self._delta_pos[i, j] = v * cur_val
-        elif event.input in self._INPUT_KEY_ROT_VALUE_MAPPING:
-            i, j, v = self._INPUT_KEY_ROT_VALUE_MAPPING[event.input]
-            self._delta_rot[i, j] = v * cur_val
-        elif event.input in self._INPUT_KEY_ROT_BOOL_MAPPING:
-            i, j, v = self._INPUT_KEY_ROT_BOOL_MAPPING[event.input]
-            if cur_val > 0.5:
-                self._delta_rot[i, j] = v
+                self._delta_pose_raw[direction, axis] = value
+                self._delta_pose_raw[1 - direction, axis] = 0
             else:
-                self._delta_rot[:, j] = 0
-        elif event.input.name in self._additional_callbacks:
-            self._additional_callbacks[event.input.name]()
+                self._delta_pose_raw[:, axis] = 0
+        # additional callbacks
+        if event.input in self._additional_callbacks:
+            self._additional_callbacks[event.input]()
+
+        # since no error, we are fine :)
         return True
 
     def _create_key_bindings(self):
         """Creates default key binding."""
-        self._INPUT_KEY_POS_VALUE_MAPPING = {
+        # map gamepad input to the element in self._delta_pose_raw
+        #   the first index is the direction (0: positive, 1: negative)
+        #   the second index is the axis (0: x, 1: y, 2: z, 3: roll, 4: pitch, 5: yaw)
+        #   the third index is the sensitivity of the command
+        self._INPUT_STICK_VALUE_MAPPING = {
             # forward command
             carb.input.GamepadInput.LEFT_STICK_UP: (0, 0, self.pos_sensitivity),
             # backward command
@@ -182,22 +197,44 @@ class Se3Gamepad(DeviceBase):
             carb.input.GamepadInput.RIGHT_STICK_UP: (0, 2, self.pos_sensitivity),
             # downward command
             carb.input.GamepadInput.RIGHT_STICK_DOWN: (1, 2, self.pos_sensitivity),
-        }
-
-        self._INPUT_KEY_ROT_BOOL_MAPPING = {
-            # forward command
-            carb.input.GamepadInput.DPAD_UP: (0, 1, self.rot_sensitivity * 0.8),
-            # backward command
-            carb.input.GamepadInput.DPAD_DOWN: (1, 1, self.rot_sensitivity * 0.8),
-            # right command
-            carb.input.GamepadInput.DPAD_RIGHT: (0, 0, self.rot_sensitivity * 0.8),
-            # left command
-            carb.input.GamepadInput.DPAD_LEFT: (1, 0, self.rot_sensitivity * 0.8),
-        }
-
-        self._INPUT_KEY_ROT_VALUE_MAPPING = {
             # yaw command (positive)
-            carb.input.GamepadInput.RIGHT_STICK_RIGHT: (0, 2, self.rot_sensitivity),
+            carb.input.GamepadInput.RIGHT_STICK_RIGHT: (0, 5, self.rot_sensitivity),
             # yaw command (negative)
-            carb.input.GamepadInput.RIGHT_STICK_LEFT: (1, 2, self.rot_sensitivity),
+            carb.input.GamepadInput.RIGHT_STICK_LEFT: (1, 5, self.rot_sensitivity),
         }
+
+        self._INPUT_DPAD_VALUE_MAPPING = {
+            # pitch command (postive)
+            carb.input.GamepadInput.DPAD_UP: (1, 4, self.rot_sensitivity * 0.8),
+            # pitch command (negative)
+            carb.input.GamepadInput.DPAD_DOWN: (0, 4, self.rot_sensitivity * 0.8),
+            # roll command (positive)
+            carb.input.GamepadInput.DPAD_RIGHT: (1, 3, self.rot_sensitivity * 0.8),
+            # roll command (negative)
+            carb.input.GamepadInput.DPAD_LEFT: (0, 3, self.rot_sensitivity * 0.8),
+        }
+
+    def _resolve_command_buffer(self, raw_command: np.ndarray) -> np.ndarray:
+        """Resolves the command buffer.
+
+        Args:
+            raw_command (np.ndarray): The raw command from the gamepad. Shape: (2, 3)
+                This is a 2D array since gamepad dpad/stick returns two values corresponding to
+                the positive and negative direction. The first index is the direction (0: positive, 1: negative)
+                and the second index is value (absolute) of the command.
+
+        Returns:
+            np.ndarray: resolved command. Shape: (3,)
+        """
+        # compare the positive and negative value decide the sign of the value
+        #   if the positive value is larger, the sign is positive (i.e. False, 0)
+        #   if the negative value is larger, the sign is positive (i.e. True, 1)
+        delta_command_sign = raw_command[1, :] > raw_command[0, :]
+        # extract the command value
+        delta_command = raw_command.max(axis=0)
+        # apply the sign
+        #  if the sign is positive, the value is already positive.
+        #  if the sign is negative, the value is negative after applying the sign.
+        delta_command[delta_command_sign] *= -1
+
+        return delta_command
