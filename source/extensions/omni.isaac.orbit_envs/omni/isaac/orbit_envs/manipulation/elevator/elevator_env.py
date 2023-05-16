@@ -23,6 +23,7 @@ from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
 from omni.isaac.orbit.utils.dict import class_to_dict
 from omni.isaac.orbit.utils.math import random_orientation, sample_uniform, scale_transform
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
+from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
 
 from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
 
@@ -366,6 +367,17 @@ class ElevatorEnv(IsaacEnv):
         # create classes (these are called by the function :meth:`_design_scene`
         self.robot = MobileManipulator(cfg=self.cfg.robot)
         self.elevator = Elevator() 
+        camera_cfg = PinholeCameraCfg(
+            sensor_tick=0,
+            height=480,
+            width=640,
+            data_types=["rgb"],
+            usd_params=PinholeCameraCfg.UsdCameraCfg(
+                focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+            ),
+        )
+        self.camera = Camera(cfg=camera_cfg, device="cuda")
+
 
         # initialize the base class to setup the scene.
         super().__init__(self.cfg, **kwargs)
@@ -411,6 +423,11 @@ class ElevatorEnv(IsaacEnv):
             translation=(1.5, -2.0, 0.0),
             orientation=(sqrt(1 / 2), 0.0, 0.0, sqrt(1 / 2)),
         )
+
+        # Spawn camera
+        self.camera.spawn(self.template_env_ns + "/Robot/panda_hand"+"/CameraSensor",
+            translation=(0.05, 0.005, 0.0),
+            orientation=(0.0616284, 0.704416, 0.704416, 0.0616284))
 
         # setup debug visualization
         if self.cfg.viewer.debug_vis and self.enable_render:
