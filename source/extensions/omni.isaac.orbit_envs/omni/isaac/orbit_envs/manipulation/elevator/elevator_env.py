@@ -216,6 +216,61 @@ class ElevatorSm:
         # convert to torch
         return self.door_state.bool(), self.sm_state
 
+@wp.kernel
+def frameTransform(
+    trans_in_0: wp.array(dtype=wp.vec3),
+    quat_in_0: wp.array(dtype=wp.quat),
+    trans_in_1: wp.array(dtype=wp.vec3),
+    rpy_in_1: wp.array(dtype=wp.vec3),
+    trans_out: wp.array(dtype=wp.vec3),
+    rpy_out: wp.array(dtype=wp.vec3)):
+    """Compute translation and quaternion: transformation0 * transformation1"""
+    tid = wp.tid()
+    transform0 = wp.transform(trans_in_0[tid], quat_in_0[tid])
+    trans_out[tid] = wp.transform_vector(transform0, trans_in_1[tid])
+    rpy_out[tid] = wp.transform_vector(transform0, rpy_in_1[tid])
+
+
+class FrameTransformer:
+    def __init__(self, num_envs: int, device: Union[torch.device, str] = "cpu"):
+        self.num_envs = num_envs
+        self.device = device
+        self.trans_out = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
+        self.rpy_out = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
+        self.trans_out_wp = wp.from_torch(self.trans_out, wp.vec3)
+        self.rpy_out_wp = wp.from_torch(self.rpy_out, wp.vec3)
+    
+    def compute(self, trans_in_0=None, quat_in_0=None, trans_in_1=None, rpy_in_1=None):
+        if trans_in_0 is None:
+            trans_in_0 = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
+        if quat_in_0 is None:
+            quat_in_0 = torch.zeros((self.num_envs,4), dtype=torch.float32, device=self.device)
+            quat_in_0[:,0] = 1.0
+        if trans_in_1 is None:
+            trans_in_1 = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
+        if rpy_in_1 is None:
+            rpy_in_1 = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
+        trans_in_0_wp = wp.from_torch(trans_in_0.to(dtype=torch.float32,device = self.device), wp.vec3)
+        quat_in_0_wp = wp.from_torch(quat_in_0[:,[1,2,3,0]].to(dtype=torch.float32, device = self.device), wp.quat)
+        trans_in_1_wp = wp.from_torch(trans_in_1.to(dtype=torch.float32, device = self.device), wp.vec3)
+        rpy_in_1_wp = wp.from_torch(rpy_in_1.to(dtype=torch.float32, device = self.device), wp.vec3)
+        
+        wp.launch(
+            kernel=frameTransform,
+            dim=self.num_envs,
+            inputs=[
+                trans_in_0_wp,
+                quat_in_0_wp,
+                trans_in_1_wp,
+                rpy_in_1_wp,
+                self.trans_out_wp,
+                self.rpy_out_wp
+            ],
+        )
+        wp.synchronize()
+        return self.trans_out, self.rpy_out
+
+
 class Elevator:
     """
     simple class for elevator.
@@ -386,6 +441,8 @@ class ElevatorEnv(IsaacEnv):
         # initialize views for the cloned scenes
         self._initialize_views()
 
+        self.frame_transfrom = FrameTransformer(self.num_envs, device="cuda")
+
         # prepare the observation manager
         self._observation_manager = ElevatorObservationManager(class_to_dict(self.cfg.observations), self, self.device)
         # prepare the reward manager
@@ -477,7 +534,12 @@ class ElevatorEnv(IsaacEnv):
         # transform actions based on controller
         if self.cfg.control.control_type == "inverse_kinematics":
             # set the controller commands
-            self._ik_controller.set_command(self.actions[:, self.robot.base_num_dof : -1])
+            ee_quad = self.robot.data.ee_state_w[:, 3:7]
+            cmd_trans = self.actions[:,self.robot.base_num_dof :self.robot.base_num_dof+3]
+            cmd_quad = self.actions[:,self.robot.base_num_dof+3 :self.robot.base_num_dof+6]
+            cmd_trans_rotated, cmd_quad_rotated = self.frame_transfrom.compute(None, ee_quad, cmd_trans, cmd_quad)
+            ik_cmd = torch.cat([cmd_trans_rotated, cmd_quad_rotated], 1).to(device=self.device)
+            self._ik_controller.set_command(ik_cmd)
             # compute the joint commands
             self.robot_actions[
                 :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
@@ -493,8 +555,11 @@ class ElevatorEnv(IsaacEnv):
             ] -= self.robot.data.actuator_pos_offset[
                 :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
             ]
-            # we assume the first is base command so don't change that
-            self.robot_actions[:, : self.robot.base_num_dof] = self.actions[:, : self.robot.base_num_dof]
+            # we assume the first is base command and we rotate it into robot's frame
+            base_r = self.robot.data.base_dof_pos[:,2]
+            cmd_x = self.actions[:,0] * torch.cos(base_r) - self.actions[:,1] * torch.sin(base_r)
+            cmd_y = self.actions[:,0] * torch.sin(base_r) + self.actions[:,1] * torch.cos(base_r)
+            self.robot_actions[:, : self.robot.base_num_dof] = torch.cat([cmd_x.unsqueeze(1), cmd_y.unsqueeze(1), self.actions[:,2].unsqueeze(1)], 1)
             # we assume last command is tool action so don't change that
             self.robot_actions[:, -1] = self.actions[:, -1]
         elif self.cfg.control.control_type == "default":
