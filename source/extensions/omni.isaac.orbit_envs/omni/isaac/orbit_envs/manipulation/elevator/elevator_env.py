@@ -9,7 +9,7 @@ import torch
 from math import sqrt
 
 # Modules for Elevator
-from typing import Optional, Sequence  # Dict, List, Tuple, Union
+from typing import Optional, Sequence, Union  # Dict, List, Tuple
 
 import carb
 import omni.isaac.core.utils.prims as prim_utils
@@ -29,6 +29,149 @@ from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
 from .elevator_cfg import ElevatorEnvCfg, RandomizationCfg
 
 
+import warp as wp
+
+from omni.isaac.orbit.utils.timer import Timer
+from enum import Enum
+# import omni.isaac.orbit_envs  # noqa: F401
+# from omni.isaac.orbit_envs.utils.parse_cfg import parse_env_cfg
+
+# initialize warp
+wp.init()
+
+
+class DoorState(Enum):
+    """States for the elevator door."""
+
+    OPEN = wp.constant(1)
+    CLOSE = wp.constant(0)
+
+
+class ElevatorSmState(Enum):
+    """States for the elevator state machine."""
+
+    REST = wp.constant(0)
+    DOOR_OPENING = wp.constant(1)
+    DOOR_CLOSING = wp.constant(2)
+    MOVE = wp.constant(3)
+    
+
+class ElevatorSmWaitTime(Enum):
+    """Additional wait times (in s) for states for before switching."""
+
+    DOOR_OPENING = wp.constant(20.0)
+    DOOR_CLOSING = wp.constant(1.0)
+    MOVE = wp.constant(0.5)
+
+
+@wp.kernel
+def infer_state_machine(
+    dt: wp.array(dtype=wp.float32),
+    sm_state: wp.array(dtype=wp.int32),
+    sm_wait_time: wp.array(dtype=wp.float32),
+    btn_pose: wp.array(dtype=wp.float32),
+    door_state: wp.array(dtype=wp.int32)
+):
+    # retrieve thread id
+    tid = wp.tid()
+    # retrieve state machine state
+    state = sm_state[tid]
+    # decide next state
+    if state == ElevatorSmState.REST.value:
+        door_state[tid] = DoorState.CLOSE.value
+        # wait for a while
+        if btn_pose[tid] < 0.0:
+            # move to next state and reset wait time
+            sm_state[tid] = ElevatorSmState.DOOR_OPENING.value
+            sm_wait_time[tid] = 0.0
+    elif state == ElevatorSmState.DOOR_OPENING.value:
+        door_state[tid] = DoorState.OPEN.value
+        if sm_wait_time[tid] >= ElevatorSmWaitTime.DOOR_OPENING.value:
+            # move to next state and reset wait time
+            sm_state[tid] = ElevatorSmState.DOOR_CLOSING.value
+            sm_wait_time[tid] = 0.0
+    elif state == ElevatorSmState.DOOR_CLOSING.value:
+        door_state[tid] = DoorState.CLOSE.value
+        if sm_wait_time[tid] >= ElevatorSmWaitTime.DOOR_CLOSING.value:
+            # move to next state and reset wait time
+            sm_state[tid] = ElevatorSmState.MOVE.value
+            sm_wait_time[tid] = 0.0
+    elif state == ElevatorSmState.MOVE.value:
+        door_state[tid] = DoorState.CLOSE.value
+        # wait for a while
+        if sm_wait_time[tid] >= ElevatorSmWaitTime.MOVE.value:
+            # move to next state and reset wait time
+            sm_state[tid] = ElevatorSmState.REST.value
+            sm_wait_time[tid] = 0.0
+    # increment wait time
+    sm_wait_time[tid] = sm_wait_time[tid] + dt[tid]
+
+
+class ElevatorSm:
+    """A simple state machine for an elevator.
+
+    The state machine is implemented as a warp kernel. The state machine is implemented as a finite state
+    machine with the following states:
+
+    1. REST: The elevator is at rest.
+    2. DOOR_OPENING: The elevator opens the door when btn pushed.
+    3. DOOR_CLOSING: The elevator close the door after waited certain time.
+    4. MOVE: The elevator keep close the door.
+    """
+
+    def __init__(self, dt: float, num_envs: int, device: Union[torch.device, str] = "cpu"):
+        """Initialize the state machine.
+
+        Args:
+            dt (float): The environment time step.
+            num_envs (int): The number of environments to simulate.
+            device (Union[torch.device, str], optional): The device to run the state machine on.
+        """
+        # save parameters
+        self.dt = dt
+        self.num_envs = num_envs
+        self.device = device
+        print("\n\n\nDEVICE:", self.device)
+        # initialize state machine
+        self.sm_dt = torch.full((self.num_envs,), self.dt, dtype=torch.float32, device=self.device)
+        self.sm_state = torch.full((self.num_envs,), 0, dtype=torch.int32, device=self.device)
+        self.sm_wait_time = torch.zeros((self.num_envs,), dtype=torch.float32, device=self.device)
+        # desired state
+        self.door_state = torch.zeros((self.num_envs,), dtype=torch.int32, device=self.device)
+        
+        # convert to warp
+        self.sm_dt_wp = wp.from_torch(self.sm_dt, wp.float32)
+        self.sm_state_wp = wp.from_torch(self.sm_state, wp.int32)
+        self.sm_wait_time_wp = wp.from_torch(self.sm_wait_time, wp.float32)
+        self.door_state_wp = wp.from_torch(self.door_state, wp.int32)
+
+    def reset_idx(self, env_ids: Sequence[int] = None):
+        """Reset the state machine."""
+        if env_ids is None:
+            env_ids = ...
+        self.sm_state[env_ids] = 0
+        self.sm_wait_time[env_ids] = 0.0
+
+    def compute(self, btn_pos: torch.Tensor):
+        """Compute the desired state of the robot's end-effector and the gripper."""
+        # convert to warp
+        btn_pos_wp = wp.from_torch(btn_pos.contiguous().to(self.device), wp.float32)
+        # run state machine
+        wp.launch(
+            kernel=infer_state_machine,
+            dim=self.num_envs,
+            inputs=[
+                self.sm_dt_wp,
+                self.sm_state_wp,
+                self.sm_wait_time_wp,
+                btn_pos_wp,
+                self.door_state_wp
+            ],
+        )
+        wp.synchronize()
+        # convert to torch
+        return self.door_state.bool()
+
 class Elevator:
     """
     simple class for elevator.
@@ -36,11 +179,13 @@ class Elevator:
 
     articulations: ArticulationView = None
 
-    def __init__(self):
+    def __init__(self, dt: float):
         self._is_spawned = False
         self._door_state = None  # 0: closed, 1: open
         self._door_pos_targets = None
         self._dof_default_pos = None
+        self._sm = None
+        self._dt = dt
 
     """
     Properties
@@ -117,8 +262,13 @@ class Elevator:
         self._dof_pos = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
         print("DoF Name", self.articulations.dof_names)
         # DoF Name ['PJoint_LO_Door', 'PJoint_RO_Door', 'PJoint_LI_Door', 'PJoint_RI_Door', 'PJoint_OU_Btn', 'PJoint_OD_Btn']
+        print("ELEVATOR DEVICE", self.device)
+        self._sm = ElevatorSm(self._dt, self.count, "cuda")
 
     def setDoorState(self, toopen=True, env_ids: Optional[Sequence[int]] = None):
+        """
+        This function can be replaced by the state machine. In update_buffers
+        """
         if env_ids is None:
             env_ids = self.all_mask
         elif len(env_ids) == 0:
@@ -133,6 +283,13 @@ class Elevator:
 
     def update_buffers(self, dt: float):
         self._dof_pos[:] = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
+        self._door_state = self._sm.compute(self._dof_pos[:,-1]).to(self.device)
+        self._door_pos_targets = (
+            torch.Tensor([[1.0, -1.0, 1.0, -1.0]]).to(self.device) * torch.where(self._door_state[..., None], 0.8, 0.0)
+        ).to(self.device)
+        dof_targets = self._dof_default_targets.clone()
+        dof_targets[:, :4] = self._door_pos_targets
+        self.articulations._physics_view.set_dof_position_targets(dof_targets, self.all_mask)
 
 
 class ElevatorEnv(IsaacEnv):
@@ -150,7 +307,7 @@ class ElevatorEnv(IsaacEnv):
         self._pre_process_cfg()
         # create classes (these are called by the function :meth:`_design_scene`
         self.robot = MobileManipulator(cfg=self.cfg.robot)
-        self.elevator = Elevator()
+        self.elevator = Elevator(dt = 1.0 / 60.0) # TODO: get dt from cfg
 
         # initialize the base class to setup the scene.
         super().__init__(self.cfg, **kwargs)
@@ -287,10 +444,6 @@ class ElevatorEnv(IsaacEnv):
         self._check_termination()
         # -- store history
         self.previous_actions = self.actions.clone()
-
-        # Elevator state update
-        self.elevator.setDoorState(True, self.elevator.all_mask[(self.elevator._dof_pos[:, -2] < 0)])
-        self.elevator.setDoorState(False, self.elevator.all_mask[(self.elevator._dof_pos[:, -1] < 0)])
 
         # -- add information to extra if timeout occurred due to episode length
         # Note: this is used by algorithms like PPO where time-outs are handled differently
