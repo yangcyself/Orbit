@@ -5,7 +5,9 @@
 
 import gym.spaces
 import math
+import numpy as np
 import torch
+from enum import Enum
 from math import sqrt
 
 # Modules for Elevator
@@ -13,6 +15,7 @@ from typing import Optional, Sequence, Union  # Dict, List, Tuple
 
 import carb
 import omni.isaac.core.utils.prims as prim_utils
+import warp as wp
 from omni.isaac.core.articulations import ArticulationView
 from pxr import Gf
 
@@ -20,20 +23,15 @@ import omni.isaac.orbit.utils.kit as kit_utils
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematics
 from omni.isaac.orbit.markers import PointMarker, StaticMarker
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
-from omni.isaac.orbit.utils.dict import class_to_dict
-from omni.isaac.orbit.utils.math import random_orientation, sample_uniform, scale_transform
-from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
 from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
+from omni.isaac.orbit.utils.dict import class_to_dict
+from omni.isaac.orbit.utils.math import scale_transform
+from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
 
 from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
 
-from .elevator_cfg import ElevatorEnvCfg, RandomizationCfg
+from .elevator_cfg import ElevatorEnvCfg
 
-
-import warp as wp
-
-from omni.isaac.orbit.utils.timer import Timer
-from enum import Enum
 # import omni.isaac.orbit_envs  # noqa: F401
 # from omni.isaac.orbit_envs.utils.parse_cfg import parse_env_cfg
 
@@ -47,10 +45,13 @@ class DoorState(Enum):
     OPEN = wp.constant(1)
     CLOSE = wp.constant(0)
 
+
 class ButtonSmState(Enum):
     """States for the elevator door."""
+
     ON = wp.constant(1)
     OFF = wp.constant(0)
+
 
 class ElevatorSmState(Enum):
     """States for the elevator state machine."""
@@ -59,7 +60,7 @@ class ElevatorSmState(Enum):
     DOOR_OPENING = wp.constant(1)
     DOOR_CLOSING = wp.constant(2)
     MOVE = wp.constant(3)
-    
+
 
 class ElevatorSmWaitTime(Enum):
     """Additional wait times (in s) for states for before switching."""
@@ -68,20 +69,18 @@ class ElevatorSmWaitTime(Enum):
     DOOR_CLOSING = wp.constant(1.0)
     MOVE = wp.constant(20)
 
+
 @wp.func
-def BtnOpensFloor( # Check floor and button
-    tid:wp.int32, 
-    floor:wp.int32, 
-    sm_state:wp.array(dtype=wp.int32, ndim=2)
-):        
+def BtnOpensFloor(tid: wp.int32, floor: wp.int32, sm_state: wp.array(dtype=wp.int32, ndim=2)):  # Check floor and button
     toOpenDoor = False
-    if(floor == 0 and (sm_state[tid, 2]) == ButtonSmState.ON.value ): # At the floor 0
+    if floor == 0 and (sm_state[tid, 2]) == ButtonSmState.ON.value:  # At the floor 0
         sm_state[tid, 2] = ButtonSmState.OFF.value
         toOpenDoor = True
-    if(floor == 0 and (sm_state[tid, 3]) == ButtonSmState.ON.value ): # At the floor 0
+    if floor == 0 and (sm_state[tid, 3]) == ButtonSmState.ON.value:  # At the floor 0
         sm_state[tid, 3] = ButtonSmState.OFF.value
         toOpenDoor = True
     return toOpenDoor
+
 
 @wp.kernel
 def infer_state_machine(
@@ -90,7 +89,7 @@ def infer_state_machine(
     sm_state: wp.array(dtype=wp.int32, ndim=2),
     sm_wait_time: wp.array(dtype=wp.float32),
     btn_pose: wp.array(dtype=wp.float32, ndim=2),
-    door_state: wp.array(dtype=wp.int32)
+    door_state: wp.array(dtype=wp.int32),
 ):
     # retrieve thread id
     tid = wp.tid()
@@ -98,30 +97,30 @@ def infer_state_machine(
     state = sm_state[tid, 0]
     # update the floor states
     floor = sm_state[tid, 1]
-        
+
     # update the btn states
     for i in range(Nbtn):
         if btn_pose[tid, i] < 0.0:
-            sm_state[tid, i+2] = ButtonSmState.ON.value
+            sm_state[tid, i + 2] = ButtonSmState.ON.value
 
     # decide next state
     if state == ElevatorSmState.REST.value:
         door_state[tid] = DoorState.CLOSE.value
 
         toOpenDoor = BtnOpensFloor(tid, floor, sm_state)
-        if(toOpenDoor):
+        if toOpenDoor:
             sm_state[tid, 0] = ElevatorSmState.DOOR_OPENING.value
             sm_wait_time[tid] = 0.0
 
-        if(floor !=0):
+        if floor != 0:
             sm_state[tid, 0] = ElevatorSmState.MOVE.value
-            sm_state[tid, 1] = 0 # assume immediately arrive at floor 0
+            sm_state[tid, 1] = 0  # assume immediately arrive at floor 0
 
     elif state == ElevatorSmState.DOOR_OPENING.value:
         door_state[tid] = DoorState.OPEN.value
 
         toOpenDoor = BtnOpensFloor(tid, floor, sm_state)
-        if(toOpenDoor):
+        if toOpenDoor:
             sm_state[tid, 0] = ElevatorSmState.DOOR_OPENING.value
             sm_wait_time[tid] = 0.0
 
@@ -133,7 +132,7 @@ def infer_state_machine(
         door_state[tid] = DoorState.CLOSE.value
 
         toOpenDoor = BtnOpensFloor(tid, floor, sm_state)
-        if(toOpenDoor):
+        if toOpenDoor:
             sm_state[tid, 0] = ElevatorSmState.DOOR_OPENING.value
             sm_wait_time[tid] = 0.0
 
@@ -203,18 +202,12 @@ class ElevatorSm:
         wp.launch(
             kernel=infer_state_machine,
             dim=self.num_envs,
-            inputs=[
-                dt,
-                2,
-                self.sm_state_wp,
-                self.sm_wait_time_wp,
-                btn_pos_wp,
-                self.door_state_wp
-            ],
+            inputs=[dt, 2, self.sm_state_wp, self.sm_wait_time_wp, btn_pos_wp, self.door_state_wp],
         )
         wp.synchronize()
         # convert to torch
         return self.door_state.bool(), self.sm_state
+
 
 @wp.kernel
 def frameTransform(
@@ -223,7 +216,8 @@ def frameTransform(
     trans_in_1: wp.array(dtype=wp.vec3),
     rpy_in_1: wp.array(dtype=wp.vec3),
     trans_out: wp.array(dtype=wp.vec3),
-    rpy_out: wp.array(dtype=wp.vec3)):
+    rpy_out: wp.array(dtype=wp.vec3),
+):
     """Compute translation and quaternion: transformation0 * transformation1"""
     tid = wp.tid()
     transform0 = wp.transform(trans_in_0[tid], quat_in_0[tid])
@@ -235,37 +229,30 @@ class FrameTransformer:
     def __init__(self, num_envs: int, device: Union[torch.device, str] = "cpu"):
         self.num_envs = num_envs
         self.device = device
-        self.trans_out = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
-        self.rpy_out = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
+        self.trans_out = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+        self.rpy_out = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self.trans_out_wp = wp.from_torch(self.trans_out, wp.vec3)
         self.rpy_out_wp = wp.from_torch(self.rpy_out, wp.vec3)
-    
+
     def compute(self, trans_in_0=None, quat_in_0=None, trans_in_1=None, rpy_in_1=None):
         if trans_in_0 is None:
-            trans_in_0 = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
+            trans_in_0 = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         if quat_in_0 is None:
-            quat_in_0 = torch.zeros((self.num_envs,4), dtype=torch.float32, device=self.device)
-            quat_in_0[:,0] = 1.0
+            quat_in_0 = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
+            quat_in_0[:, 0] = 1.0
         if trans_in_1 is None:
-            trans_in_1 = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
+            trans_in_1 = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         if rpy_in_1 is None:
-            rpy_in_1 = torch.zeros((self.num_envs,3), dtype=torch.float32, device=self.device)
-        trans_in_0_wp = wp.from_torch(trans_in_0.to(dtype=torch.float32,device = self.device), wp.vec3)
-        quat_in_0_wp = wp.from_torch(quat_in_0[:,[1,2,3,0]].to(dtype=torch.float32, device = self.device), wp.quat)
-        trans_in_1_wp = wp.from_torch(trans_in_1.to(dtype=torch.float32, device = self.device), wp.vec3)
-        rpy_in_1_wp = wp.from_torch(rpy_in_1.to(dtype=torch.float32, device = self.device), wp.vec3)
-        
+            rpy_in_1 = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+        trans_in_0_wp = wp.from_torch(trans_in_0.to(dtype=torch.float32, device=self.device), wp.vec3)
+        quat_in_0_wp = wp.from_torch(quat_in_0[:, [1, 2, 3, 0]].to(dtype=torch.float32, device=self.device), wp.quat)
+        trans_in_1_wp = wp.from_torch(trans_in_1.to(dtype=torch.float32, device=self.device), wp.vec3)
+        rpy_in_1_wp = wp.from_torch(rpy_in_1.to(dtype=torch.float32, device=self.device), wp.vec3)
+
         wp.launch(
             kernel=frameTransform,
             dim=self.num_envs,
-            inputs=[
-                trans_in_0_wp,
-                quat_in_0_wp,
-                trans_in_1_wp,
-                rpy_in_1_wp,
-                self.trans_out_wp,
-                self.rpy_out_wp
-            ],
+            inputs=[trans_in_0_wp, quat_in_0_wp, trans_in_1_wp, rpy_in_1_wp, self.trans_out_wp, self.rpy_out_wp],
         )
         wp.synchronize()
         return self.trans_out, self.rpy_out
@@ -366,9 +353,7 @@ class Elevator:
         # DoF Name ['PJoint_LO_Door', 'PJoint_RO_Door', 'PJoint_LI_Door', 'PJoint_RI_Door', 'PJoint_OU_Btn', 'PJoint_OD_Btn', 'RJoint_OU_Light', 'RJoint_OD_Light']
         print("ELEVATOR DEVICE", self.device)
         # summarize the DoF index
-        self._dof_index = {
-            name: i for i, name in enumerate(self.articulations.dof_names)
-        }
+        self._dof_index = {name: i for i, name in enumerate(self.articulations.dof_names)}
         self._dof_index_door = [
             self._dof_index[n] for n in ["PJoint_LO_Door", "PJoint_RO_Door", "PJoint_LI_Door", "PJoint_RI_Door"]
         ]
@@ -393,7 +378,7 @@ class Elevator:
 
     def update_buffers(self, dt: float):
         self._dof_pos[:] = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
-        door_state, sm_state = self._sm.compute(dt, self._dof_pos[:,self._dof_index_btn])
+        door_state, sm_state = self._sm.compute(dt, self._dof_pos[:, self._dof_index_btn])
         self._door_state = door_state.to(self.device)
         sm_state = sm_state.to(self.device)
         self._door_pos_targets = (
@@ -403,7 +388,9 @@ class Elevator:
         # print("sm_state", sm_state)
         self.articulations.set_joint_positions(sm_state[:, -2:] * 3.14, self.all_mask, self._dof_index_light)
         self.articulations.set_joint_position_targets(self._door_pos_targets, self.all_mask, self._dof_index_door)
-        self.articulations.set_joint_position_targets(self._dof_pos[:,self._dof_index_btn]+1, self.all_mask, self._dof_index_btn)
+        self.articulations.set_joint_position_targets(
+            self._dof_pos[:, self._dof_index_btn] + 1, self.all_mask, self._dof_index_btn
+        )
 
 
 class ElevatorEnv(IsaacEnv):
@@ -413,6 +400,7 @@ class ElevatorEnv(IsaacEnv):
         cfg (ElevatorEnvCfg): The configuration dictionary.
         kwargs (dict): Additional keyword arguments. See IsaacEnv for more details.
     """
+
     def __init__(self, cfg: ElevatorEnvCfg = None, **kwargs):
         # copy configuration
         self.cfg = cfg
@@ -421,18 +409,19 @@ class ElevatorEnv(IsaacEnv):
         self._pre_process_cfg()
         # create classes (these are called by the function :meth:`_design_scene`
         self.robot = MobileManipulator(cfg=self.cfg.robot)
-        self.elevator = Elevator() 
+        self.elevator = Elevator()
         camera_cfg = PinholeCameraCfg(
             sensor_tick=0,
-            height=480,
-            width=640,
+            # height=480,
+            # width=640,
+            height=128,
+            width=128,
             data_types=["rgb"],
             usd_params=PinholeCameraCfg.UsdCameraCfg(
                 focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
             ),
         )
         self.camera = Camera(cfg=camera_cfg, device="cuda")
-
 
         # initialize the base class to setup the scene.
         super().__init__(self.cfg, **kwargs)
@@ -454,8 +443,14 @@ class ElevatorEnv(IsaacEnv):
         print("[INFO] Reward Manager: ", self._reward_manager)
 
         # compute the observation space
-        num_obs = self._observation_manager._group_obs_dim["policy"][0]
-        self.observation_space = gym.spaces.Box(low=-math.inf, high=math.inf, shape=(num_obs,))
+        lowdim_num_obs = self._observation_manager._group_obs_dim["low_dim"][0]
+        rgb_num_obs = self._observation_manager._group_obs_dim["rgb"]
+        self.observation_space = gym.spaces.Dict(
+            {
+                "low_dim": gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,)),
+                "rgb": gym.spaces.Box(low=0, high=255, shape=rgb_num_obs, dtype=np.uint8),
+            }
+        )
         # compute the action space
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(self.num_actions,))
         print("[INFO]: Completed setting up the environment...")
@@ -464,6 +459,7 @@ class ElevatorEnv(IsaacEnv):
         # -- fill up buffers
         self.robot.update_buffers(self.dt)
         self.elevator.update_buffers(self.dt)
+        self.camera.update(dt=self.dt)
 
     """
     Implementation specifics.
@@ -482,9 +478,11 @@ class ElevatorEnv(IsaacEnv):
         )
 
         # Spawn camera
-        self.camera.spawn(self.template_env_ns + "/Robot/panda_hand"+"/CameraSensor",
-            translation=(0.05, 0.005, 0.0),
-            orientation=(0.0616284, 0.704416, 0.704416, 0.0616284))
+        self.camera.spawn(
+            self.template_env_ns + "/Robot/panda_hand" + "/CameraSensor",
+            translation=(0.05, 0.005, -0.01),
+            orientation=(0.0616284, 0.704416, 0.704416, 0.0616284),
+        )
 
         # setup debug visualization
         if self.cfg.viewer.debug_vis and self.enable_render:
@@ -508,8 +506,6 @@ class ElevatorEnv(IsaacEnv):
         dof_pos, dof_vel = self.robot.get_default_dof_state(env_ids=env_ids)
         self.robot.set_dof_state(dof_pos, dof_vel, env_ids=env_ids)
         self.elevator.setDoorState(toopen=False, env_ids=env_ids)
-        # -- desired end-effector pose
-        self._randomize_ee_desired_pose(env_ids, cfg=self.cfg.randomization.ee_desired_pose)
 
         # -- Reward logging
         # fill extras with episode information
@@ -535,8 +531,8 @@ class ElevatorEnv(IsaacEnv):
         if self.cfg.control.control_type == "inverse_kinematics":
             # set the controller commands
             ee_quad = self.robot.data.ee_state_w[:, 3:7]
-            cmd_trans = self.actions[:,self.robot.base_num_dof :self.robot.base_num_dof+3]
-            cmd_quad = self.actions[:,self.robot.base_num_dof+3 :self.robot.base_num_dof+6]
+            cmd_trans = self.actions[:, self.robot.base_num_dof : self.robot.base_num_dof + 3]
+            cmd_quad = self.actions[:, self.robot.base_num_dof + 3 : self.robot.base_num_dof + 6]
             cmd_trans_rotated, cmd_quad_rotated = self.frame_transfrom.compute(None, ee_quad, cmd_trans, cmd_quad)
             ik_cmd = torch.cat([cmd_trans_rotated, cmd_quad_rotated], 1).to(device=self.device)
             self._ik_controller.set_command(ik_cmd)
@@ -556,10 +552,12 @@ class ElevatorEnv(IsaacEnv):
                 :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
             ]
             # we assume the first is base command and we rotate it into robot's frame
-            base_r = self.robot.data.base_dof_pos[:,2]
-            cmd_x = self.actions[:,0] * torch.cos(base_r) - self.actions[:,1] * torch.sin(base_r)
-            cmd_y = self.actions[:,0] * torch.sin(base_r) + self.actions[:,1] * torch.cos(base_r)
-            self.robot_actions[:, : self.robot.base_num_dof] = torch.cat([cmd_x.unsqueeze(1), cmd_y.unsqueeze(1), self.actions[:,2].unsqueeze(1)], 1)
+            base_r = self.robot.data.base_dof_pos[:, 2]
+            cmd_x = self.actions[:, 0] * torch.cos(base_r) - self.actions[:, 1] * torch.sin(base_r)
+            cmd_y = self.actions[:, 0] * torch.sin(base_r) + self.actions[:, 1] * torch.cos(base_r)
+            self.robot_actions[:, : self.robot.base_num_dof] = torch.cat(
+                [cmd_x.unsqueeze(1), cmd_y.unsqueeze(1), self.actions[:, 2].unsqueeze(1)], 1
+            )
             # we assume last command is tool action so don't change that
             self.robot_actions[:, -1] = self.actions[:, -1]
         elif self.cfg.control.control_type == "default":
@@ -577,6 +575,7 @@ class ElevatorEnv(IsaacEnv):
         # -- compute common buffers
         self.robot.update_buffers(self.dt)
         self.elevator.update_buffers(self.dt)
+        self.camera.update(dt=self.dt)
         # -- compute MDP signals
         # reward
         self.reward_buf = self._reward_manager.compute()
@@ -621,13 +620,6 @@ class ElevatorEnv(IsaacEnv):
         self.dt = self.cfg.control.decimation * self.physics_dt  # control-dt
         self.max_episode_length = math.ceil(self.cfg.env.episode_length_s / self.dt)
 
-        # convert configuration parameters to torch
-        # randomization
-        # -- desired pose
-        config = self.cfg.randomization.ee_desired_pose
-        for attr in ["position_uniform_min", "position_uniform_max", "position_default", "orientation_default"]:
-            setattr(config, attr, torch.tensor(getattr(config, attr), device=self.device, requires_grad=False))
-
     def _initialize_views(self) -> None:
         """Creates views and extract useful quantities from them."""
         # play the simulator to activate physics handles
@@ -637,6 +629,7 @@ class ElevatorEnv(IsaacEnv):
         # define views over instances
         self.robot.initialize(self.env_ns + "/.*/Robot")
         self.elevator.initialize(self.env_ns + "/.*/Elevator")
+        self.camera.initialize()
 
         # create controller
         if self.cfg.control.control_type == "inverse_kinematics":
@@ -652,18 +645,10 @@ class ElevatorEnv(IsaacEnv):
         self.previous_actions = torch.zeros((self.num_envs, self.num_actions), device=self.device)
         # robot joint actions
         self.robot_actions = torch.zeros((self.num_envs, self.robot.num_actions), device=self.device)
-        # commands
-        self.ee_des_pose_w = torch.zeros((self.num_envs, 7), device=self.device)
 
     def _debug_vis(self):
         # compute error between end-effector and command
-        error = torch.sum(torch.square(self.ee_des_pose_w[:, :3] - self.robot.data.ee_state_w[:, 0:3]), dim=1)
-        # set indices of the prim based on error threshold
-        goal_indices = torch.where(error < 0.002, 1, 0)
-        # apply to instance manager
-        # -- goal
-        self._goal_markers.set_world_poses(self.ee_des_pose_w[:, :3], self.ee_des_pose_w[:, 3:7])
-        self._goal_markers.set_status(goal_indices)
+
         # -- end-effector
         self._ee_markers.set_world_poses(self.robot.data.ee_state_w[:, 0:3], self.robot.data.ee_state_w[:, 3:7])
         # -- task-space commands
@@ -686,56 +671,35 @@ class ElevatorEnv(IsaacEnv):
         if self.cfg.terminations.episode_timeout:
             self.reset_buf = torch.where(self.episode_length_buf >= self.max_episode_length, 1, self.reset_buf)
 
-    def _randomize_ee_desired_pose(self, env_ids: torch.Tensor, cfg: RandomizationCfg.EndEffectorDesiredPoseCfg):
-        """Randomize the desired pose of the end-effector."""
-        # -- desired object root position
-        if cfg.position_cat == "default":
-            # constant command for position
-            self.ee_des_pose_w[env_ids, 0:3] = cfg.position_default
-        elif cfg.position_cat == "uniform":
-            # sample uniformly from box
-            # note: this should be within in the workspace of the robot
-            self.ee_des_pose_w[env_ids, 0:3] = sample_uniform(
-                cfg.position_uniform_min, cfg.position_uniform_max, (len(env_ids), 3), device=self.device
-            )
-        else:
-            raise ValueError(f"Invalid category for randomizing the desired object positions '{cfg.position_cat}'.")
-        # -- desired object root orientation
-        if cfg.orientation_cat == "default":
-            # constant position of the object
-            self.ee_des_pose_w[env_ids, 3:7] = cfg.orientation_default
-        elif cfg.orientation_cat == "uniform":
-            self.ee_des_pose_w[env_ids, 3:7] = random_orientation(len(env_ids), self.device)
-        else:
-            raise ValueError(
-                f"Invalid category for randomizing the desired object orientation '{cfg.orientation_cat}'."
-            )
-        # transform command from local env to world
-        self.ee_des_pose_w[env_ids, 0:3] += self.envs_positions[env_ids]
-
 
 class ElevatorObservationManager(ObservationManager):
     """Reward manager for single-arm reaching environment."""
 
-    def arm_dof_pos_normalized(self, env: ElevatorEnv):
+    def dof_pos_normalized(self, env: ElevatorEnv):
         """DOF positions for the arm normalized to its max and min ranges."""
         return scale_transform(
-            env.robot.data.arm_dof_pos,
-            env.robot.data.soft_dof_pos_limits[:, :7, 0],
-            env.robot.data.soft_dof_pos_limits[:, :7, 1],
+            env.robot.data.dof_pos,
+            env.robot.data.soft_dof_pos_limits[:, :, 0],
+            env.robot.data.soft_dof_pos_limits[:, :, 1],
         )
 
-    def arm_dof_vel(self, env: ElevatorEnv):
+    def dof_vel(self, env: ElevatorEnv):
         """DOF velocity of the arm."""
-        return env.robot.data.arm_dof_vel
+        return env.robot.data.dof_vel
 
     def ee_position(self, env: ElevatorEnv):
         """Current end-effector position of the arm."""
         return env.robot.data.ee_state_w[:, :3] - env.envs_positions
 
-    def ee_position_command(self, env: ElevatorEnv):
-        """Desired end-effector position of the arm."""
-        return env.ee_des_pose_w[:, :3] - env.envs_positions
+    def camera_rgb(self, env: ElevatorEnv):
+        """RGB camera observations.
+        type uint8 and be stored in channel-last (H, W, C) format.
+        """
+        image_shape = env.camera.image_shape
+        if env.camera.data.output["rgb"] is None:
+            return torch.zeros((env.num_envs, image_shape[0], image_shape[1], 3), device=env.device)
+        else:
+            return (wp.torch.to_torch(env.camera.data.output["rgb"])[:, :, :3]).to(env.device)
 
     def actions(self, env: ElevatorEnv):
         """Last actions provided to env."""
@@ -744,17 +708,6 @@ class ElevatorObservationManager(ObservationManager):
 
 class ElevatorRewardManager(RewardManager):
     """Reward manager for single-arm reaching environment."""
-
-    def tracking_robot_position_l2(self, env: ElevatorEnv):
-        """Penalize tracking position error using L2-kernel."""
-        # compute error
-        return torch.sum(torch.square(env.ee_des_pose_w[:, :3] - env.robot.data.ee_state_w[:, 0:3]), dim=1)
-
-    def tracking_robot_position_exp(self, env: ElevatorEnv, sigma: float):
-        """Penalize tracking position error using exp-kernel."""
-        # compute error
-        error = torch.sum(torch.square(env.ee_des_pose_w[:, :3] - env.robot.data.ee_state_w[:, 0:3]), dim=1)
-        return torch.exp(-error / sigma)
 
     def penalizing_robot_dof_velocity_l2(self, env: ElevatorEnv):
         """Penalize large movements of the robot arm."""

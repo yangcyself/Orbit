@@ -66,31 +66,33 @@ class ObservationsCfg:
     """Observation specifications for the MDP."""
 
     @configclass
-    class PolicyCfg:
-        """Observations for policy group."""
+    class LowDimCfg:
+        """Observations for low dimension."""
 
         # global group settings
         enable_corruption: bool = True
         # observation terms
-        arm_dof_pos_normalized = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.01, "max": 0.01}}
-        arm_dof_vel = {"scale": 0.5, "noise": {"name": "uniform", "min": -0.1, "max": 0.1}}
+        dof_pos_normalized = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.01, "max": 0.01}}
+        dof_vel = {"scale": 0.5, "noise": {"name": "uniform", "min": -0.1, "max": 0.1}}
         ee_position = {}
-        ee_position_command = {}
         actions = {}
 
+    @configclass
+    class RGBCfg:
+        camera_rgb = {}
+
     # global observation settings
-    return_dict_obs_in_group = False
+    return_dict_obs_in_group = True
     """Whether to return observations as dictionary or flattened vector within groups."""
     # observation groups
-    policy: PolicyCfg = PolicyCfg()
+    low_dim: LowDimCfg = LowDimCfg()
+    rgb: RGBCfg = RGBCfg()
 
 
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    tracking_robot_position_l2 = {"weight": 0.0}
-    tracking_robot_position_exp = {"weight": 2.5, "sigma": 0.05}  # 0.25
     penalizing_robot_dof_velocity_l2 = {"weight": -0.02}  # -1e-4
     penalizing_robot_dof_acceleration_l2 = {"weight": -1e-5}
     penalizing_action_rate_l2 = {"weight": -0.1}
