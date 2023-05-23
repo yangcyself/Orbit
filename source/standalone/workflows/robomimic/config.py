@@ -14,6 +14,9 @@ ROBOMIMIC_CONFIG_FILES_DICT = {
     "Isaac-Lift-Franka-v0": {
         "bc": os.path.join(ORBIT_ENVS_DATA_DIR, "robomimic/lift_bc.json"),
         "bcq": os.path.join(ORBIT_ENVS_DATA_DIR, "robomimic/lift_bcq.json"),
+    },
+    "Isaac-Elevator-Franka-v0": {
+        "bc_rnn": "source/standalone/workflows/elevatorTaking/config/robomimic_bc_rnn.json"
     }
 }
 """Mapping from environment names to imitation learning config files."""

@@ -21,6 +21,9 @@ def check_group(f, num: int):
     print("\t" * num, "attributes", ":")
     for attr in f.attrs:
         print("\t" * (num + 1), attr, ":", type(f.attrs[attr]), ":", f.attrs[attr])
+    if type(f) == h5py._hl.dataset.Dataset:
+        print("\t" * (num+1), "shape", f.shape)
+        print("\t" * (num+1), "dtype", f.dtype)
 
 
 if __name__ == "__main__":

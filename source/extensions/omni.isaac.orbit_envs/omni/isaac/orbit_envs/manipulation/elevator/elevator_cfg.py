@@ -79,7 +79,7 @@ class ObservationsCfg:
 
     @configclass
     class RGBCfg:
-        camera_rgb = {}
+        hand_camera_rgb = {}
 
     # global observation settings
     return_dict_obs_in_group = True
@@ -103,6 +103,8 @@ class TerminationsCfg:
     """Termination terms for the MDP."""
 
     episode_timeout = True  # reset when episode length ended
+    is_success = True  # reset when robot is in elevator
+    collision = True  # reset when robot collides with the elevator
 
 
 @configclass

@@ -191,7 +191,7 @@ class ElevatorSm:
         """Reset the state machine."""
         if env_ids is None:
             env_ids = ...
-        self.sm_state[env_ids] = 0
+        self.sm_state[env_ids,:] = 0
         self.sm_wait_time[env_ids] = 0.0
 
     def compute(self, dt: float, btn_pos: torch.Tensor):
@@ -362,7 +362,7 @@ class Elevator:
 
         self._sm = ElevatorSm(self.count, "cuda")
 
-    def setDoorState(self, toopen=True, env_ids: Optional[Sequence[int]] = None):
+    def reset_idx(self, env_ids: Optional[Sequence[int]] = None):
         """
         This function can be replaced by the state machine. In update_buffers
         """
@@ -370,11 +370,8 @@ class Elevator:
             env_ids = self.all_mask
         elif len(env_ids) == 0:
             return
-        self._door_state[env_ids] = bool(toopen)
-        self._door_pos_targets = (
-            torch.Tensor([[1.0, -1.0, 1.0, -1.0]]).to(self.device) * torch.where(self._door_state[..., None], 0.8, 0.0)
-        ).to(self.device)
-        self.articulations.set_joint_position_targets(self._door_pos_targets, self.all_mask, self._dof_index_door)
+        self._sm.reset_idx(env_ids)
+        self.articulations.set_joint_positions(torch.zeros((len(env_ids), 4),device = self.device), env_ids, self._dof_index_door)
 
     def update_buffers(self, dt: float):
         self._dof_pos[:] = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
@@ -430,6 +427,7 @@ class ElevatorEnv(IsaacEnv):
         # initialize views for the cloned scenes
         self._initialize_views()
 
+        assert self.num_envs == 1, "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
         self.frame_transfrom = FrameTransformer(self.num_envs, device="cuda")
 
         # prepare the observation manager
@@ -505,7 +503,10 @@ class ElevatorEnv(IsaacEnv):
         # -- robot DOF state
         dof_pos, dof_vel = self.robot.get_default_dof_state(env_ids=env_ids)
         self.robot.set_dof_state(dof_pos, dof_vel, env_ids=env_ids)
-        self.elevator.setDoorState(toopen=False, env_ids=env_ids)
+        self.elevator.reset_idx(env_ids=env_ids)
+
+        # --desire position
+        self.robot_des_pose_w[env_ids, 0:2] = self.envs_positions[:,:2] + torch.tensor([[1.53,-2.08]], device = self.device)
 
         # -- Reward logging
         # fill extras with episode information
@@ -587,6 +588,8 @@ class ElevatorEnv(IsaacEnv):
         # -- add information to extra if timeout occurred due to episode length
         # Note: this is used by algorithms like PPO where time-outs are handled differently
         self.extras["time_outs"] = self.episode_length_buf >= self.max_episode_length
+        robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
+        self.extras["is_success"] = torch.where(robot_pos_error < 1, 1, 0)
         # -- update USD visualization
         if self.cfg.viewer.debug_vis and self.enable_render:
             self._debug_vis()
@@ -630,6 +633,7 @@ class ElevatorEnv(IsaacEnv):
         self.robot.initialize(self.env_ns + "/.*/Robot")
         self.elevator.initialize(self.env_ns + "/.*/Elevator")
         self.camera.initialize()
+        # self.camera.initialize(self.env_ns + "/.*/Robot/panda_hand/CameraSensor/Camera")
 
         # create controller
         if self.cfg.control.control_type == "inverse_kinematics":
@@ -645,6 +649,9 @@ class ElevatorEnv(IsaacEnv):
         self.previous_actions = torch.zeros((self.num_envs, self.num_actions), device=self.device)
         # robot joint actions
         self.robot_actions = torch.zeros((self.num_envs, self.robot.num_actions), device=self.device)
+
+        # commands
+        self.robot_des_pose_w = torch.zeros((self.num_envs, 3), device=self.device)
 
     def _debug_vis(self):
         # compute error between end-effector and command
@@ -668,6 +675,9 @@ class ElevatorEnv(IsaacEnv):
         # compute resets
         self.reset_buf[:] = 0
         # -- episode length
+        if self.cfg.terminations.is_success:
+            robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
+            self.reset_buf = torch.where(robot_pos_error < 1, 1, self.reset_buf)
         if self.cfg.terminations.episode_timeout:
             self.reset_buf = torch.where(self.episode_length_buf >= self.max_episode_length, 1, self.reset_buf)
 
@@ -691,7 +701,7 @@ class ElevatorObservationManager(ObservationManager):
         """Current end-effector position of the arm."""
         return env.robot.data.ee_state_w[:, :3] - env.envs_positions
 
-    def camera_rgb(self, env: ElevatorEnv):
+    def hand_camera_rgb(self, env: ElevatorEnv):
         """RGB camera observations.
         type uint8 and be stored in channel-last (H, W, C) format.
         """
@@ -699,7 +709,7 @@ class ElevatorObservationManager(ObservationManager):
         if env.camera.data.output["rgb"] is None:
             return torch.zeros((env.num_envs, image_shape[0], image_shape[1], 3), device=env.device)
         else:
-            return (wp.torch.to_torch(env.camera.data.output["rgb"])[:, :, :3]).to(env.device)
+            return (wp.torch.to_torch(env.camera.data.output["rgb"])[None, :, :, :3]).to(env.device)
 
     def actions(self, env: ElevatorEnv):
         """Last actions provided to env."""
