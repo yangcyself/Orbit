@@ -4,11 +4,68 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
             "program": "${file}",
+            "console": "integratedTerminal",
+            "env": {
+                "EXP_PATH": "${workspaceFolder}/_isaac_sim/apps",
+                "RESOURCE_NAME": "IsaacSim"
+            },
+            "envFile": "${workspaceFolder}/.vscode/.python.env",
+            "preLaunchTask": "setup_python_env"
+        },
+        {
+            "name": "Robomimic: Inspect dataset",
+            "type": "python",
+            "request": "launch",
+            "args" : ["logs/robomimic/Isaac-Elevator-Franka-v0/hdf_dataset.hdf5"],
+            "program": "${workspaceFolder}/source/standalone/workflows/robomimic/tools/inspect_demonstrations.py",
+            "console": "integratedTerminal",
+            "env": {
+                "EXP_PATH": "${workspaceFolder}/_isaac_sim/apps",
+                "RESOURCE_NAME": "IsaacSim"
+            },
+            "envFile": "${workspaceFolder}/.vscode/.python.env",
+            "preLaunchTask": "setup_python_env"
+        },
+        {
+            "name": "Robomimic: Train Elevator",
+            "type": "python",
+            "request": "launch",
+            "args" : ["--task", "Isaac-Elevator-Franka-v0", "--algo", "bc_rnn", "--dataset", "logs/robomimic/Isaac-Elevator-Franka-v0/hdf_dataset.hdf5"],
+            "program": "${workspaceFolder}/source/standalone/workflows/robomimic/train.py",
+            "console": "integratedTerminal",
+            "env": {
+                "EXP_PATH": "${workspaceFolder}/_isaac_sim/apps",
+                "RESOURCE_NAME": "IsaacSim"
+            },
+            "envFile": "${workspaceFolder}/.vscode/.python.env",
+            "preLaunchTask": "setup_python_env"
+        },
+        {
+            "name": "Robomimic: Train Lift",
+            "type": "python",
+            "request": "launch",
+            "args" : ["--task", "Isaac-Lift-Franka-v0", "--algo", "bc", "--dataset", "logs/robomimic/Isaac-Lift-Franka-v0/hdf_dataset.hdf5"],
+            "program": "${workspaceFolder}/source/standalone/workflows/robomimic/train.py",
+            "console": "integratedTerminal",
+            "env": {
+                "EXP_PATH": "${workspaceFolder}/_isaac_sim/apps",
+                "RESOURCE_NAME": "IsaacSim"
+            },
+            "envFile": "${workspaceFolder}/.vscode/.python.env",
+            "preLaunchTask": "setup_python_env"
+        },
+        {
+            "name": "elevatorEnv: teleoperation",
+            "type": "python",
+            "request": "launch",
+            "args" : ["--num_envs", "1", "--cpu"],
+            "program": "${workspaceFolder}/source/standalone/workflows/elevatorTaking/teleop_env.py",
             "console": "integratedTerminal",
             "env": {
                 "EXP_PATH": "${workspaceFolder}/_isaac_sim/apps",

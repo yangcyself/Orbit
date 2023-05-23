@@ -261,7 +261,7 @@ while [[ $# -gt 0 ]]; do
             # always execute inside the Orbit directory
             echo "[INFO] Formatting the repository..."
             cd ${ORBIT_PATH}
-            pre-commit run --all-files
+            ${HOME}/.local/bin/pre-commit run --all-files
             cd - > /dev/null
             # set the python path back to the original value
             if [ -n "${CONDA_DEFAULT_ENV}" ]; then
