@@ -23,7 +23,7 @@ import omni.isaac.orbit.utils.kit as kit_utils
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematics
 from omni.isaac.orbit.markers import PointMarker, StaticMarker
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
-from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
+# from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
 from omni.isaac.orbit.utils.dict import class_to_dict
 from omni.isaac.orbit.utils.math import scale_transform
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
@@ -433,7 +433,7 @@ class ElevatorEnv(IsaacEnv):
         # initialize views for the cloned scenes
         self._initialize_views()
 
-        assert self.num_envs == 1, "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
+        assert (self.num_envs == 1 or self.camera is None), "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
         self.frame_transfrom = FrameTransformer(self.num_envs, device="cuda")
 
         # prepare the observation manager
@@ -447,12 +447,14 @@ class ElevatorEnv(IsaacEnv):
         print("[INFO] Reward Manager: ", self._reward_manager)
 
         # compute the observation space
-        lowdim_num_obs = self._observation_manager._group_obs_dim["low_dim"][0]
-        obs_space_dict = {"low_dim": gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,))}
+        lowdim_num_obs = self._observation_manager._group_obs_dim["policy"][0]
+        obs_space_dict = {"policy": gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,))}
         if(self.camera is not None):
             rgb_num_obs = self._observation_manager._group_obs_dim["rgb"]
             obs_space_dict["rgb"] = gym.spaces.Box(low=0, high=255, shape=rgb_num_obs, dtype=np.uint8),
-        self.observation_space = gym.spaces.Dict(obs_space_dict)
+            self.observation_space = gym.spaces.Dict(obs_space_dict)
+        else: # return only a flattend observation space
+            self.observation_space = obs_space_dict["policy"]
 
         # compute the action space
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(self.num_actions,))

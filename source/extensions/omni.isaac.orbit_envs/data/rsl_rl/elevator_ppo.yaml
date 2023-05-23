@@ -42,11 +42,11 @@ runner:
   policy_class_name: "ActorCritic"
   algorithm_class_name: "PPO"
   num_steps_per_env: 64  # per iteration
-  max_iterations: 250  # number of policy updates
+  max_iterations: 1000  # number of policy updates
 
   # logging
-  save_interval: 15  # check for potential saves every this many iterations
-  experiment_name: "reach"
+  save_interval: 25  # check for potential saves every this many iterations
+  experiment_name: "elevator_reach"
   run_name: ""
   # load and resume
   resume: False

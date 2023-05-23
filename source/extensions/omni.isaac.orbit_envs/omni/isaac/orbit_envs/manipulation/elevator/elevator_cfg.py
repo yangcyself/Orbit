@@ -92,13 +92,24 @@ class ObservationsCfg:
     class RGBCfg:
         hand_camera_rgb = {}
 
+    @configclass
+    class PolicyCfg:
+        enable_corruption: bool = False
+        # observation terms
+        dof_pos_normalized = {"scale": 1.0}
+        dof_vel = {"scale": 0.5}
+        ee_position = {}
+        actions = {}
+        elevator_state = {}
+
     # global observation settings
+    policy: PolicyCfg = PolicyCfg()
     return_dict_obs_in_group = True
     """Whether to return observations as dictionary or flattened vector within groups."""
     # observation groups
-    low_dim: LowDimCfg = LowDimCfg()
+    # low_dim: LowDimCfg = LowDimCfg()
     # rgb: RGBCfg = RGBCfg()
-    privilege: PrivilegeCfg = PrivilegeCfg()
+    # privilege: PrivilegeCfg = PrivilegeCfg()
 
 
 @configclass
@@ -149,7 +160,7 @@ class ElevatorEnvCfg(IsaacEnvCfg):
 
     # General Settings
     # env: EnvCfg = EnvCfg(num_envs=2048, env_spacing=2.5, episode_length_s=4.0)
-    env: EnvCfg = EnvCfg(num_envs=16, env_spacing=8, episode_length_s=8.0)
+    env: EnvCfg = EnvCfg(num_envs=16, env_spacing=8, episode_length_s=60.0)
     viewer: ViewerCfg = ViewerCfg(debug_vis=False, eye=(7.5, 7.5, 7.5), lookat=(0.0, 0.0, 0.0))
     # Physics settings
     sim: SimCfg = SimCfg(dt=1.0 / 60.0, substeps=1)
