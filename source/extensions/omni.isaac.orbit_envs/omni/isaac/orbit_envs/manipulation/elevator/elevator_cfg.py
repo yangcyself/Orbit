@@ -86,8 +86,6 @@ class ObservationsCfg:
         dof_pos_normalized = {"scale": 1.0}
         dof_vel = {"scale": 0.5}
         ee_position = {}
-        des_ee_pose = {}
-        des_base_pose = {}
         elevator_state = {}
 
     @configclass
@@ -99,7 +97,7 @@ class ObservationsCfg:
     """Whether to return observations as dictionary or flattened vector within groups."""
     # observation groups
     low_dim: LowDimCfg = LowDimCfg()
-    rgb: RGBCfg = RGBCfg()
+    # rgb: RGBCfg = RGBCfg()
     privilege: PrivilegeCfg = PrivilegeCfg()
 
 
@@ -110,8 +108,7 @@ class RewardsCfg:
     penalizing_robot_dof_velocity_l2 = {"weight": -0.02}  # -1e-4
     penalizing_robot_dof_acceleration_l2 = {"weight": -1e-5}
     penalizing_action_rate_l2 = {"weight": -0.1}
-    reaching_object_pose_l2 = {"weight": 2.5}
-    reaching_base_position_l2 = {"weight": 2.5}
+    tracking_reference_points = {"weight": 1, "sigma": 0.25}
 
 
 @configclass

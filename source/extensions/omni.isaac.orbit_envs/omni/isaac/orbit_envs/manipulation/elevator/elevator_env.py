@@ -2,7 +2,7 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-
+import os
 import gym.spaces
 import math
 import numpy as np
@@ -29,7 +29,7 @@ from omni.isaac.orbit.utils.math import scale_transform
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
 
 from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
-
+from omni.isaac.assets import ASSETS_DATA_DIR
 from .elevator_cfg import ElevatorEnvCfg
 
 # import omni.isaac.orbit_envs  # noqa: F401
@@ -206,7 +206,7 @@ class ElevatorSm:
         )
         wp.synchronize()
         # convert to torch
-        return self.door_state.bool(), self.sm_state
+        return self.door_state.bool()
 
 
 @wp.kernel
@@ -268,6 +268,7 @@ class Elevator:
     def __init__(self):
         self._is_spawned = False
         self._door_state = None  # 0: closed, 1: open
+        self._sm_state = None
         self._door_pos_targets = None
         self._dof_default_pos = None
         self._sm = None
@@ -320,7 +321,7 @@ class Elevator:
             quat = transform.ExtractRotation().GetQuat()
             prim_utils.create_prim(
                 self._spawn_prim_path,
-                usd_path="/home/chenyu/opt/orbit/source/standalone/elevator1.usd",
+                usd_path=os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "elevator.usd"),
                 translation=transform.ExtractTranslation(),
                 orientation=(quat.real, *quat.imaginary),
             )
@@ -361,6 +362,7 @@ class Elevator:
         self._dof_index_light = [self._dof_index[n] for n in ["RJoint_OU_Light", "RJoint_OD_Light"]]
 
         self._sm = ElevatorSm(self.count, "cuda")
+        self._sm_state = self._sm.sm_state
 
     def reset_idx(self, env_ids: Optional[Sequence[int]] = None):
         """
@@ -375,9 +377,9 @@ class Elevator:
 
     def update_buffers(self, dt: float):
         self._dof_pos[:] = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
-        door_state, sm_state = self._sm.compute(dt, self._dof_pos[:, self._dof_index_btn])
+        door_state = self._sm.compute(dt, self._dof_pos[:, self._dof_index_btn])
         self._door_state = door_state.to(self.device)
-        sm_state = sm_state.to(self.device)
+        sm_state = self._sm_state.to(self.device)
         self._door_pos_targets = (
             torch.Tensor([[1.0, -1.0, 1.0, -1.0]]).to(self.device) * torch.where(self._door_state[..., None], 0.8, 0.0)
         ).to(self.device)
@@ -407,18 +409,22 @@ class ElevatorEnv(IsaacEnv):
         # create classes (these are called by the function :meth:`_design_scene`
         self.robot = MobileManipulator(cfg=self.cfg.robot)
         self.elevator = Elevator()
-        camera_cfg = PinholeCameraCfg(
-            sensor_tick=0,
-            # height=480,
-            # width=640,
-            height=128,
-            width=128,
-            data_types=["rgb"],
-            usd_params=PinholeCameraCfg.UsdCameraCfg(
-                focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
-            ),
-        )
-        self.camera = Camera(cfg=camera_cfg, device="cuda")
+
+        if(hasattr(self.cfg.observations, "rgb")):
+            camera_cfg = PinholeCameraCfg(
+                sensor_tick=0,
+                # height=480,
+                # width=640,
+                height=128,
+                width=128,
+                data_types=["rgb"],
+                usd_params=PinholeCameraCfg.UsdCameraCfg(
+                    focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+                ),
+            )
+            self.camera = Camera(cfg=camera_cfg, device="cuda")
+        else:
+            self.camera = None
 
         # initialize the base class to setup the scene.
         super().__init__(self.cfg, **kwargs)
@@ -442,13 +448,12 @@ class ElevatorEnv(IsaacEnv):
 
         # compute the observation space
         lowdim_num_obs = self._observation_manager._group_obs_dim["low_dim"][0]
-        rgb_num_obs = self._observation_manager._group_obs_dim["rgb"]
-        self.observation_space = gym.spaces.Dict(
-            {
-                "low_dim": gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,)),
-                "rgb": gym.spaces.Box(low=0, high=255, shape=rgb_num_obs, dtype=np.uint8),
-            }
-        )
+        obs_space_dict = {"low_dim": gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,))}
+        if(self.camera is not None):
+            rgb_num_obs = self._observation_manager._group_obs_dim["rgb"]
+            obs_space_dict["rgb"] = gym.spaces.Box(low=0, high=255, shape=rgb_num_obs, dtype=np.uint8),
+        self.observation_space = gym.spaces.Dict(obs_space_dict)
+
         # compute the action space
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(self.num_actions,))
         print("[INFO]: Completed setting up the environment...")
@@ -457,7 +462,8 @@ class ElevatorEnv(IsaacEnv):
         # -- fill up buffers
         self.robot.update_buffers(self.dt)
         self.elevator.update_buffers(self.dt)
-        self.camera.update(dt=self.dt)
+        if(self.camera is not None):
+            self.camera.update(dt=self.dt)
 
     """
     Implementation specifics.
@@ -476,11 +482,12 @@ class ElevatorEnv(IsaacEnv):
         )
 
         # Spawn camera
-        self.camera.spawn(
-            self.template_env_ns + "/Robot/panda_hand" + "/CameraSensor",
-            translation=(0.05, 0.005, -0.01),
-            orientation=(0.0616284, 0.704416, 0.704416, 0.0616284),
-        )
+        if(self.camera is not None):
+            self.camera.spawn(
+                self.template_env_ns + "/Robot/panda_hand" + "/CameraSensor",
+                translation=(0.05, 0.005, -0.01),
+                orientation=(0.0616284, 0.704416, 0.704416, 0.0616284),
+            )
 
         # setup debug visualization
         if self.cfg.viewer.debug_vis and self.enable_render:
@@ -576,7 +583,8 @@ class ElevatorEnv(IsaacEnv):
         # -- compute common buffers
         self.robot.update_buffers(self.dt)
         self.elevator.update_buffers(self.dt)
-        self.camera.update(dt=self.dt)
+        if(self.camera is not None):
+            self.camera.update(dt=self.dt)
         # -- compute MDP signals
         # reward
         self.reward_buf = self._reward_manager.compute()
@@ -632,7 +640,8 @@ class ElevatorEnv(IsaacEnv):
         # define views over instances
         self.robot.initialize(self.env_ns + "/.*/Robot")
         self.elevator.initialize(self.env_ns + "/.*/Elevator")
-        self.camera.initialize()
+        if(self.camera is not None):
+            self.camera.initialize()
         # self.camera.initialize(self.env_ns + "/.*/Robot/panda_hand/CameraSensor/Camera")
 
         # create controller
@@ -701,6 +710,11 @@ class ElevatorObservationManager(ObservationManager):
         """Current end-effector position of the arm."""
         return env.robot.data.ee_state_w[:, :3] - env.envs_positions
 
+    def elevator_state(self, env: ElevatorEnv):
+        """The state of the elevator"""
+        
+        return env.elevator._sm_state.to(env.device)
+
     def hand_camera_rgb(self, env: ElevatorEnv):
         """RGB camera observations.
         type uint8 and be stored in channel-last (H, W, C) format.
@@ -730,3 +744,22 @@ class ElevatorRewardManager(RewardManager):
     def penalizing_action_rate_l2(self, env: ElevatorEnv):
         """Penalize large variations in action commands."""
         return torch.sum(torch.square(env.actions[:, :-1] - env.previous_actions[:, :-1]), dim=1)
+
+    def tracking_reference_points(self, env: ElevatorEnv, sigma):
+        
+        ee_state_w = env.robot.data.ee_state_w[:, :]
+        ee_state_w[:,:3] -= env.envs_positions
+        target_ee_pose_push_btn = torch.tensor([3.8264e-01, -6.2690e-01,  1.4919e-01,  6.6142e-03,  9.3128e-01,
+          3.7249e-02,  3.6234e-01], device = env.device)
+
+        error = torch.sum(torch.square(ee_state_w[:,:7] - target_ee_pose_push_btn), dim=1)
+        reward = torch.exp(-error / sigma)
+
+        elevator_state = env.elevator._sm_state.to(env.device)
+        door_opening_mask = elevator_state[:,0] == 1
+        reward[door_opening_mask] = 1.
+        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:2] - env.robot_des_pose_w[:,:2], dim=1)
+        robot_pos_reward = torch.exp(-robot_pos_error / sigma)
+        reward[door_opening_mask] += robot_pos_reward[door_opening_mask]
+
+        return reward
