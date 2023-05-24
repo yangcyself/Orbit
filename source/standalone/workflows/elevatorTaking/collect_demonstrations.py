@@ -70,7 +70,7 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     # modify configuration
-    env_cfg.terminations.episode_timeout = False
+    env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
     env_cfg.observations.return_dict_obs_in_group = True
 

@@ -16,7 +16,8 @@ from typing import Optional, Sequence, Union  # Dict, List, Tuple
 import carb
 import omni.isaac.core.utils.prims as prim_utils
 import warp as wp
-from omni.isaac.core.articulations import ArticulationView
+from omni.isaac.core.articulations import ArticulationView 
+from omni.isaac.core.prims import RigidContactView
 from pxr import Gf
 
 import omni.isaac.orbit.utils.kit as kit_utils
@@ -348,6 +349,11 @@ class Elevator:
         self.articulations.initialize()
         # set the default state
         self.articulations.post_reset()
+
+        # Create the contact views
+        self.rigidContacts = RigidContactView(self._prim_paths_expr+"/wall", ["/World/defaultGroundPlane"], prepare_contact_sensors=False, apply_rigid_body_api=False)
+        self.rigidContacts.initialize()
+
         self._door_state = torch.zeros(self.count, dtype=torch.bool, device=self.device)
         self._dof_default_targets = self.articulations._physics_view.get_dof_position_targets()
         self._dof_pos = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
@@ -605,6 +611,9 @@ class ElevatorEnv(IsaacEnv):
         # -- update USD visualization
         if self.cfg.viewer.debug_vis and self.enable_render:
             self._debug_vis()
+
+        # print(self.elevator.rigidContacts.get_contact_force_matrix())
+        print(self.elevator.rigidContacts.get_net_contact_forces())
 
     def _get_observations(self) -> VecEnvObs:
         # compute observations
