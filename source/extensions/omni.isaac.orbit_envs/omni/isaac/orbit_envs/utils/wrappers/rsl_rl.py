@@ -74,9 +74,17 @@ class RslRlVecEnvWrapper(gym.Wrapper, VecEnv):
         gym.Wrapper.__init__(self, env)
         # check that environment only provides flatted obs
         if not isinstance(env.observation_space, gym.spaces.Box):
-            raise ValueError(
-                f"RSL-RL only supports flattened observation spaces. Input observation space: {env.observation_space}"
-            )
+            if isinstance(env.observation_space, gym.spaces.Dict):
+                if not isinstance(env.observation_space["policy"], gym.spaces.Box):
+                    raise ValueError(
+                        f"RSL-RL only supports flattened observation spaces. Input observation space: {env.observation_space}"
+                    )
+                self.env.observation_space = self.env.observation_space["policy"]
+            else:
+                raise ValueError(
+                    f"RSL-RL only supports flattened observation spaces. Input observation space: {env.observation_space}"
+                )
+
         # store information required by wrapper
         self.num_envs = self.env.unwrapped.num_envs
         self.num_actions = self.env.action_space.shape[0]

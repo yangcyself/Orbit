@@ -80,20 +80,6 @@ class ObservationsCfg:
     @configclass
     class PrivilegeCfg:
         """Observations for privileged information."""
-        # global group settings
-        enable_corruption: bool = False
-        # observation terms
-        dof_pos_normalized = {"scale": 1.0}
-        dof_vel = {"scale": 0.5}
-        ee_position = {}
-        elevator_state = {}
-
-    @configclass
-    class RGBCfg:
-        hand_camera_rgb = {}
-
-    @configclass
-    class PolicyCfg:
         enable_corruption: bool = False
         # observation terms
         dof_pos_normalized = {"scale": 1.0}
@@ -103,8 +89,13 @@ class ObservationsCfg:
         elevator_state = {}
         elevator_waittime = {}
 
+    @configclass
+    class RGBCfg:
+        hand_camera_rgb = {}
+
+
     # global observation settings
-    # policy: PolicyCfg = PolicyCfg()
+    policy: PrivilegeCfg = PrivilegeCfg()
     return_dict_obs_in_group = True
     """Whether to return observations as dictionary or flattened vector within groups."""
     # observation groups

@@ -448,7 +448,7 @@ class ElevatorEnv(IsaacEnv):
         print("[INFO] Reward Manager: ", self._reward_manager)
 
         # compute the observation space
-        policy_obs_name = "low_dim"
+        policy_obs_name = "policy" # low_dim
         lowdim_num_obs = self._observation_manager._group_obs_dim[policy_obs_name][0]
         obs_space_dict = {policy_obs_name: gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,))}
         if(self.camera is not None):
