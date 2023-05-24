@@ -65,9 +65,9 @@ class ElevatorSmState(Enum):
 class ElevatorSmWaitTime(Enum):
     """Additional wait times (in s) for states for before switching."""
 
-    DOOR_OPENING = wp.constant(20.0)
-    DOOR_CLOSING = wp.constant(1.0)
-    MOVE = wp.constant(20)
+    DOOR_OPENING = wp.constant(25.0)
+    DOOR_CLOSING = wp.constant(3.0)
+    MOVE = wp.constant(25)
 
 
 @wp.func
@@ -451,7 +451,7 @@ class ElevatorEnv(IsaacEnv):
         obs_space_dict = {"policy": gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,))}
         if(self.camera is not None):
             rgb_num_obs = self._observation_manager._group_obs_dim["rgb"]
-            obs_space_dict["rgb"] = gym.spaces.Box(low=0, high=255, shape=rgb_num_obs, dtype=np.uint8),
+            obs_space_dict["rgb"] = gym.spaces.Box(low=0, high=255, shape=rgb_num_obs, dtype=np.uint8)
             self.observation_space = gym.spaces.Dict(obs_space_dict)
         else: # return only a flattend observation space
             self.observation_space = obs_space_dict["policy"]
@@ -515,7 +515,7 @@ class ElevatorEnv(IsaacEnv):
         self.elevator.reset_idx(env_ids=env_ids)
 
         # --desire position
-        self.robot_des_pose_w[env_ids, 0:2] = self.envs_positions[:,:2] + torch.tensor([[1.53,-2.08]], device = self.device)
+        self.robot_des_pose_w[env_ids, 0:2] =  torch.tensor([[1.53,-2.08]], device = self.device)
 
         # -- Reward logging
         # fill extras with episode information
@@ -710,12 +710,15 @@ class ElevatorObservationManager(ObservationManager):
 
     def ee_position(self, env: ElevatorEnv):
         """Current end-effector position of the arm."""
-        return env.robot.data.ee_state_w[:, :3] - env.envs_positions
+        return env.robot.data.ee_state_w[:, :3]
 
     def elevator_state(self, env: ElevatorEnv):
         """The state of the elevator"""
-        
-        return env.elevator._sm_state.to(env.device)
+        return torch.nn.functional.one_hot(env.elevator._sm_state.to(dtype = torch.int64, device = env.device)[:,0], num_classes = 4).to(torch.float32)
+    
+    def elevator_waittime(self, env: ElevatorEnv):
+        """The state of the elevator"""
+        return (env.elevator._sm.sm_wait_time/40).reshape((env.num_envs, 1)).to(env.device)
 
     def hand_camera_rgb(self, env: ElevatorEnv):
         """RGB camera observations.
@@ -747,21 +750,29 @@ class ElevatorRewardManager(RewardManager):
         """Penalize large variations in action commands."""
         return torch.sum(torch.square(env.actions[:, :-1] - env.previous_actions[:, :-1]), dim=1)
 
+    def penalizing_action_l2(self, env: ElevatorEnv):
+        """Penalize large actions."""
+        return torch.sum(torch.square(env.actions[:, :-1]), dim=1)
+
     def tracking_reference_points(self, env: ElevatorEnv, sigma):
         
-        ee_state_w = env.robot.data.ee_state_w[:, :]
+        ee_state_w = env.robot.data.ee_state_w[:, :7]
         ee_state_w[:,:3] -= env.envs_positions
-        target_ee_pose_push_btn = torch.tensor([3.8264e-01, -6.2690e-01,  1.4919e-01,  6.6142e-03,  9.3128e-01,
-          3.7249e-02,  3.6234e-01], device = env.device)
+        target_ee_pose_push_btn = torch.tensor([0.3477, -0.7259,  0.1966,  0.2992,  0.6214, -0.5843,  0.4277],
+            device = env.device)
 
-        error = torch.sum(torch.square(ee_state_w[:,:7] - target_ee_pose_push_btn), dim=1)
-        reward = torch.exp(-error / sigma)
+        error_position = torch.sum(torch.square(ee_state_w[:,:3] - target_ee_pose_push_btn[:3]), dim=1)
+        reward = 2 * torch.exp(-error_position / sigma)
+        # make the first element positive
+        ee_state_w[ee_state_w[:,3]<0, 3:7] *= -1
+        error_rotation = torch.sum(torch.square(ee_state_w[:,3:7] - target_ee_pose_push_btn[3:]), dim=1)
+        reward += torch.exp(-error_rotation / sigma)
 
         elevator_state = env.elevator._sm_state.to(env.device)
         door_opening_mask = elevator_state[:,0] == 1
-        reward[door_opening_mask] = 1.
+        reward[ elevator_state[:,0]>0 ] = 3. # No reward for button pushing when elevator is not at rest
         robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:2] - env.robot_des_pose_w[:,:2], dim=1)
-        robot_pos_reward = torch.exp(-robot_pos_error / sigma)
+        robot_pos_reward = 6 * torch.exp(-robot_pos_error / sigma / 4.)
         reward[door_opening_mask] += robot_pos_reward[door_opening_mask]
 
         return reward

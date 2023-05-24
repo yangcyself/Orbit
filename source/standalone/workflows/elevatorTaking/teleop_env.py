@@ -99,7 +99,9 @@ def main():
         # pre-process actions
         actions = pre_process_actions(base_cmd, delta_pose, gripper_command)
         # apply actions
-        _, _, _, _ = env.step(actions)
+        obs, rew, _, _ = env.step(actions)
+        # print({kk:{k: v[0,...] - v[1,...] for k,v in vv.items() } for kk,vv in obs.items()})
+        # print("reward", rew[0] - rew[1])
         # check if simulator is stopped
         if env.unwrapped.sim.is_stopped():
             break

@@ -58,8 +58,10 @@ from rslrl_config import parse_rslrl_cfg
 def main():
     """Train with RSL-RL agent."""
     # parse configuration
-    env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
+    env_cfg = parse_env_cfg(args_cli.task, use_gpu=False, num_envs=args_cli.num_envs)
     env_cfg.observations.return_dict_obs_in_group = False
+    env_cfg.terminations.is_success = False
+
     agent_cfg = parse_rslrl_cfg(args_cli.task)
     # override config from command line
     if args_cli.seed is not None:

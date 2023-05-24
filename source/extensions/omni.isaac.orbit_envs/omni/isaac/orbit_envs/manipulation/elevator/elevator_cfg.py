@@ -99,8 +99,9 @@ class ObservationsCfg:
         dof_pos_normalized = {"scale": 1.0}
         dof_vel = {"scale": 0.5}
         ee_position = {}
-        actions = {}
+        # actions = {}
         elevator_state = {}
+        elevator_waittime = {}
 
     # global observation settings
     policy: PolicyCfg = PolicyCfg()
@@ -118,8 +119,9 @@ class RewardsCfg:
 
     penalizing_robot_dof_velocity_l2 = {"weight": -0.02}  # -1e-4
     penalizing_robot_dof_acceleration_l2 = {"weight": -1e-5}
-    penalizing_action_rate_l2 = {"weight": -0.1}
-    tracking_reference_points = {"weight": 1, "sigma": 0.25}
+    # penalizing_action_rate_l2 = {"weight": -0.1}
+    penalizing_action_l2 = {"weight": -0.5}
+    tracking_reference_points = {"weight": 4, "sigma": 0.5}
 
 
 @configclass
@@ -160,7 +162,7 @@ class ElevatorEnvCfg(IsaacEnvCfg):
 
     # General Settings
     # env: EnvCfg = EnvCfg(num_envs=2048, env_spacing=2.5, episode_length_s=4.0)
-    env: EnvCfg = EnvCfg(num_envs=16, env_spacing=8, episode_length_s=60.0)
+    env: EnvCfg = EnvCfg(num_envs=16, env_spacing=8, episode_length_s=50.0)
     viewer: ViewerCfg = ViewerCfg(debug_vis=False, eye=(7.5, 7.5, 7.5), lookat=(0.0, 0.0, 0.0))
     # Physics settings
     sim: SimCfg = SimCfg(dt=1.0 / 60.0, substeps=1)
