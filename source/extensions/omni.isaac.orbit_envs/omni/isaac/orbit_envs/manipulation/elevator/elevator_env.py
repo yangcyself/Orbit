@@ -23,7 +23,7 @@ import omni.isaac.orbit.utils.kit as kit_utils
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematics
 from omni.isaac.orbit.markers import PointMarker, StaticMarker
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
-# from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
+from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
 from omni.isaac.orbit.utils.dict import class_to_dict
 from omni.isaac.orbit.utils.math import scale_transform
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
@@ -321,6 +321,7 @@ class Elevator:
             quat = transform.ExtractRotation().GetQuat()
             prim_utils.create_prim(
                 self._spawn_prim_path,
+                # usd_path="/home/chenyu/opt/orbit/source/standalone/elevator1.usd",
                 usd_path=os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "elevator.usd"),
                 translation=transform.ExtractTranslation(),
                 orientation=(quat.real, *quat.imaginary),
@@ -447,14 +448,15 @@ class ElevatorEnv(IsaacEnv):
         print("[INFO] Reward Manager: ", self._reward_manager)
 
         # compute the observation space
-        lowdim_num_obs = self._observation_manager._group_obs_dim["policy"][0]
-        obs_space_dict = {"policy": gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,))}
+        policy_obs_name = "low_dim"
+        lowdim_num_obs = self._observation_manager._group_obs_dim[policy_obs_name][0]
+        obs_space_dict = {policy_obs_name: gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,))}
         if(self.camera is not None):
             rgb_num_obs = self._observation_manager._group_obs_dim["rgb"]
             obs_space_dict["rgb"] = gym.spaces.Box(low=0, high=255, shape=rgb_num_obs, dtype=np.uint8)
             self.observation_space = gym.spaces.Dict(obs_space_dict)
         else: # return only a flattend observation space
-            self.observation_space = obs_space_dict["policy"]
+            self.observation_space = obs_space_dict[policy_obs_name]
 
         # compute the action space
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(self.num_actions,))

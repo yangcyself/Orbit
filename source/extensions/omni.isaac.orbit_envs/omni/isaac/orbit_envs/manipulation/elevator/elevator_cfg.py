@@ -104,12 +104,12 @@ class ObservationsCfg:
         elevator_waittime = {}
 
     # global observation settings
-    policy: PolicyCfg = PolicyCfg()
+    # policy: PolicyCfg = PolicyCfg()
     return_dict_obs_in_group = True
     """Whether to return observations as dictionary or flattened vector within groups."""
     # observation groups
-    # low_dim: LowDimCfg = LowDimCfg()
-    # rgb: RGBCfg = RGBCfg()
+    low_dim: LowDimCfg = LowDimCfg()
+    rgb: RGBCfg = RGBCfg()
     # privilege: PrivilegeCfg = PrivilegeCfg()
 
 
