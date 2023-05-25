@@ -44,10 +44,11 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=1)
     # modify configuration
-    env_cfg.control.control_type = "inverse_kinematics"
-    env_cfg.control.inverse_kinematics.command_type = "pose_rel"
-    env_cfg.terminations.episode_timeout = False
+    # env_cfg.control.control_type = "inverse_kinematics"
+    # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
+    env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
+    env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
 
     # create environment
