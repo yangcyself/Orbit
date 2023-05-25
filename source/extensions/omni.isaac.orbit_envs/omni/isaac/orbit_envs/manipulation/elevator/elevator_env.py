@@ -780,6 +780,10 @@ class ElevatorRewardManager(RewardManager):
     def penalizing_action_l2(self, env: ElevatorEnv):
         """Penalize large actions."""
         return torch.sum(torch.square(env.actions[:, :-1]), dim=1)
+    
+    def penalizing_collision(self, env:ElevatorEnv):
+        """Penalize collision"""
+        return env.rigidContacts.get_net_contact_forces().abs().sum(axis = -1).reshape(env.num_envs,-1).sum(axis = -1)*10
 
     def tracking_reference_points(self, env: ElevatorEnv, sigma):
         

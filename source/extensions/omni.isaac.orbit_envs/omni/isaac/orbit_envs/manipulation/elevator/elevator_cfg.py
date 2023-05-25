@@ -107,7 +107,8 @@ class RewardsCfg:
     penalizing_robot_dof_acceleration_l2 = {"weight": -1e-5}
     # penalizing_action_rate_l2 = {"weight": -0.1}
     penalizing_action_l2 = {"weight": -0.5}
-    tracking_reference_points = {"weight": 4, "sigma": 0.5}
+    penalizing_collision = {"weight": -1.}
+    tracking_reference_points = {"weight": 2., "sigma": 0.5}
 
 
 @configclass
@@ -116,7 +117,7 @@ class TerminationsCfg:
 
     episode_timeout = True  # reset when episode length ended
     is_success = True  # reset when robot is in elevator
-    collision = True  # reset when robot collides with the elevator
+    collision = False  # reset when robot collides with the elevator
 
 
 @configclass
