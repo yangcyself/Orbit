@@ -40,25 +40,20 @@ class MarkerCfg:
 
 
 @configclass
-class RandomizationCfg:
-    """Randomization of scene at reset."""
+class InitializationCfg:
+    """configuration of the initialization of the Env."""
 
     @configclass
-    class EndEffectorDesiredPoseCfg:
-        """Randomization of end-effector pose command."""
-
+    class RobotPosCfg:
+        """Initposition of the robot."""
         # category
-        position_cat: str = "default"  # randomize position: "default", "uniform"
-        orientation_cat: str = "default"  # randomize position: "default", "uniform"
+        position_cat: str = "uniform"  # randomize position: "default", "uniform"
         # randomize position
-        position_default = [0.5, 0.0, 0.5]  # position default (x,y,z)
-        position_uniform_min = [0.25, -0.25, 0.25]  # position (x,y,z)
-        position_uniform_max = [0.5, 0.25, 0.5]  # position (x,y,z)
-        # randomize orientation
-        orientation_default = [1.0, 0.0, 0.0, 0.0]  # orientation default
+        position_uniform_min = [0.9, 0.3, -3.1]  # position (x,y,z)
+        position_uniform_max = [2.1, 2., 0.]  # position (x,y,z)
 
     # initialize
-    ee_desired_pose: EndEffectorDesiredPoseCfg = EndEffectorDesiredPoseCfg()
+    robot: RobotPosCfg = RobotPosCfg()
 
 
 @configclass
@@ -100,7 +95,7 @@ class ObservationsCfg:
     """Whether to return observations as dictionary or flattened vector within groups."""
     # observation groups
     low_dim: LowDimCfg = LowDimCfg()
-    rgb: RGBCfg = RGBCfg()
+    # rgb: RGBCfg = RGBCfg()
     # privilege: PrivilegeCfg = PrivilegeCfg()
 
 
@@ -153,7 +148,7 @@ class ElevatorEnvCfg(IsaacEnvCfg):
 
     # General Settings
     # env: EnvCfg = EnvCfg(num_envs=2048, env_spacing=2.5, episode_length_s=4.0)
-    env: EnvCfg = EnvCfg(num_envs=16, env_spacing=8, episode_length_s=50.0)
+    env: EnvCfg = EnvCfg(num_envs=16, env_spacing=16, episode_length_s=50.0)
     viewer: ViewerCfg = ViewerCfg(debug_vis=False, eye=(7.5, 7.5, 7.5), lookat=(0.0, 0.0, 0.0))
     # Physics settings
     sim: SimCfg = SimCfg(dt=1.0 / 60.0, substeps=1)
@@ -164,10 +159,12 @@ class ElevatorEnvCfg(IsaacEnvCfg):
     marker: MarkerCfg = MarkerCfg()
 
     # MDP settings
-    randomization: RandomizationCfg = RandomizationCfg()
     observations: ObservationsCfg = ObservationsCfg()
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
 
     # Controller settings
     control: ControlCfg = ControlCfg()
+
+    # Initialization settings
+    initialization: InitializationCfg = InitializationCfg()

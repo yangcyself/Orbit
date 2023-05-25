@@ -72,6 +72,7 @@ def main():
     # modify configuration
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
+    env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
 
     # create environment

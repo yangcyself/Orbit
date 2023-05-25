@@ -18,6 +18,7 @@ import omni.isaac.core.utils.prims as prim_utils
 import warp as wp
 from omni.isaac.core.articulations import ArticulationView 
 from omni.isaac.core.prims import RigidContactView
+from omni.isaac.sensor import ContactSensor
 from pxr import Gf
 
 import omni.isaac.orbit.utils.kit as kit_utils
@@ -26,7 +27,7 @@ from omni.isaac.orbit.markers import PointMarker, StaticMarker
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
 from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
 from omni.isaac.orbit.utils.dict import class_to_dict
-from omni.isaac.orbit.utils.math import scale_transform
+from omni.isaac.orbit.utils.math import scale_transform, sample_uniform
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
 
 from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
@@ -322,8 +323,8 @@ class Elevator:
             quat = transform.ExtractRotation().GetQuat()
             prim_utils.create_prim(
                 self._spawn_prim_path,
-                # usd_path="/home/chenyu/opt/orbit/source/standalone/elevator1.usd",
-                usd_path=os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "elevator.usd"),
+                usd_path="/home/chenyu/opt/orbit/source/standalone/elevator1.usd",
+                # usd_path=os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "elevator.usd"),
                 translation=transform.ExtractTranslation(),
                 orientation=(quat.real, *quat.imaginary),
             )
@@ -349,10 +350,6 @@ class Elevator:
         self.articulations.initialize()
         # set the default state
         self.articulations.post_reset()
-
-        # Create the contact views
-        self.rigidContacts = RigidContactView(self._prim_paths_expr+"/wall", ["/World/defaultGroundPlane"], prepare_contact_sensors=False, apply_rigid_body_api=False)
-        self.rigidContacts.initialize()
 
         self._door_state = torch.zeros(self.count, dtype=torch.bool, device=self.device)
         self._dof_default_targets = self.articulations._physics_view.get_dof_position_targets()
@@ -522,6 +519,9 @@ class ElevatorEnv(IsaacEnv):
         self.robot.set_dof_state(dof_pos, dof_vel, env_ids=env_ids)
         self.elevator.reset_idx(env_ids=env_ids)
 
+        # -- init pose
+        self._randomize_robot_initial_pose(env_ids=env_ids)
+
         # --desire position
         self.robot_des_pose_w[env_ids, 0:2] =  torch.tensor([[1.53,-2.08]], device = self.device)
 
@@ -612,8 +612,6 @@ class ElevatorEnv(IsaacEnv):
         if self.cfg.viewer.debug_vis and self.enable_render:
             self._debug_vis()
 
-        # print(self.elevator.rigidContacts.get_contact_force_matrix())
-        print(self.elevator.rigidContacts.get_net_contact_forces())
 
     def _get_observations(self) -> VecEnvObs:
         # compute observations
@@ -653,6 +651,11 @@ class ElevatorEnv(IsaacEnv):
         # define views over instances
         self.robot.initialize(self.env_ns + "/.*/Robot")
         self.elevator.initialize(self.env_ns + "/.*/Elevator")
+
+        # Create the contact views
+        self.rigidContacts = RigidContactView(self.env_ns + "/.*/Elevator/.*", [], prepare_contact_sensors=False, apply_rigid_body_api=False)
+        self.rigidContacts.initialize()
+
         if(self.camera is not None):
             self.camera.initialize()
         # self.camera.initialize(self.env_ns + "/.*/Robot/panda_hand/CameraSensor/Camera")
@@ -702,6 +705,19 @@ class ElevatorEnv(IsaacEnv):
             self.reset_buf = torch.where(robot_pos_error < 1, 1, self.reset_buf)
         if self.cfg.terminations.episode_timeout:
             self.reset_buf = torch.where(self.episode_length_buf >= self.max_episode_length, 1, self.reset_buf)
+        if self.cfg.terminations.collision:
+            collid = self.rigidContacts.get_net_contact_forces().abs().sum(axis = -1).reshape(self.num_envs,-1).sum(axis = -1)
+            self.reset_buf = torch.where(collid > 0.1, 1, self.reset_buf)
+
+    def _randomize_robot_initial_pose(self, env_ids: torch.Tensor):
+        if(self.cfg.initialization.robot.position_cat=="uniform"):
+            dof, dof_vel = self.robot.get_default_dof_state(env_ids)
+            dof[:, 0:3] = sample_uniform(
+                torch.tensor([self.cfg.initialization.robot.position_uniform_min], device=self.device), 
+                torch.tensor([self.cfg.initialization.robot.position_uniform_max], device=self.device), 
+                (len(env_ids), 3), device=self.device
+            )
+            self.robot.set_dof_state(dof, dof_vel, env_ids=env_ids)
 
 
 class ElevatorObservationManager(ObservationManager):
@@ -780,10 +796,13 @@ class ElevatorRewardManager(RewardManager):
         reward += torch.exp(-error_rotation / sigma)
 
         elevator_state = env.elevator._sm_state.to(env.device)
-        door_opening_mask = elevator_state[:,0] == 1
-        reward[ elevator_state[:,0]>0 ] = 3. # No reward for button pushing when elevator is not at rest
+
+        reward[ elevator_state[:,0]>0 ] = 3. # No reward gradient for button pushing when elevator is not at rest
         robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:2] - env.robot_des_pose_w[:,:2], dim=1)
         robot_pos_reward = 6 * torch.exp(-robot_pos_error / sigma / 4.)
-        reward[door_opening_mask] += robot_pos_reward[door_opening_mask]
+        
+        # no reward if the door is closed and robot is outside of the elevator
+        robot_pos_reward[(elevator_state[:,0] > 1) & (robot_pos_error > 1)] = 0.
+        reward[elevator_state[:,0] > 0] += robot_pos_reward[elevator_state[:,0] > 0]
 
         return reward
