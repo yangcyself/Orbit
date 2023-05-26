@@ -707,7 +707,7 @@ class ElevatorEnv(IsaacEnv):
             self.reset_buf = torch.where(self.episode_length_buf >= self.max_episode_length, 1, self.reset_buf)
         if self.cfg.terminations.collision:
             collid = self.rigidContacts.get_net_contact_forces().abs().sum(axis = -1).reshape(self.num_envs,-1).sum(axis = -1)
-            self.reset_buf = torch.where(collid > 0.1, 1, self.reset_buf)
+            self.reset_buf = torch.where(collid > 10., 1, self.reset_buf)
 
     def _randomize_robot_initial_pose(self, env_ids: torch.Tensor):
         if(self.cfg.initialization.robot.position_cat=="uniform"):
@@ -783,7 +783,7 @@ class ElevatorRewardManager(RewardManager):
     
     def penalizing_collision(self, env:ElevatorEnv):
         """Penalize collision"""
-        return env.rigidContacts.get_net_contact_forces().abs().sum(axis = -1).reshape(env.num_envs,-1).sum(axis = -1)*10
+        return (env.rigidContacts.get_net_contact_forces().abs().sum(axis = -1).reshape(env.num_envs,-1).sum(axis = -1)>0.1).to(torch.float32)
 
     def tracking_reference_points(self, env: ElevatorEnv, sigma):
         
