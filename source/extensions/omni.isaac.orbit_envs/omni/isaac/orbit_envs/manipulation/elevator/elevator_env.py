@@ -274,8 +274,8 @@ class Elevator:
             quat = transform.ExtractRotation().GetQuat()
             prim_utils.create_prim(
                 self._spawn_prim_path,
-                usd_path="/home/chenyu/opt/orbit/source/standalone/elevator1.usd",
-                # usd_path=os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "elevator.usd"),
+                # usd_path="/home/chenyu/opt/orbit/source/standalone/elevator1.usd",
+                usd_path=os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "elevator.usd"),
                 translation=transform.ExtractTranslation(),
                 orientation=(quat.real, *quat.imaginary),
             )
