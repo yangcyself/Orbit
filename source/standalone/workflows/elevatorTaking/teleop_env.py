@@ -58,6 +58,7 @@ def main():
     env_cfg.control.inverse_kinematics.command_type = "pose_rel"
     env_cfg.terminations.episode_timeout = False
     env_cfg.terminations.is_success = False
+    env_cfg.observation_grouping = {"rgb":None}
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=args_cli.headless)
     # check environment name (for reach , we don't allow the gripper)

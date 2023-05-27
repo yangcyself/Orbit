@@ -61,6 +61,7 @@ def main():
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=False, num_envs=args_cli.num_envs)
     env_cfg.observations.return_dict_obs_in_group = False
     env_cfg.terminations.is_success = False
+    env_cfg.observation_grouping = {"policy":"privilege"}
 
     agent_cfg = parse_rslrl_cfg(args_cli.task)
     # override config from command line

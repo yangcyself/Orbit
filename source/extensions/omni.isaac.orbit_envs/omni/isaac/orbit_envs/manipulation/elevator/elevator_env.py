@@ -365,7 +365,7 @@ class ElevatorEnv(IsaacEnv):
         self.robot = MobileManipulator(cfg=self.cfg.robot)
         self.elevator = Elevator()
 
-        if(hasattr(self.cfg.observations, "rgb")):
+        if("rgb" in self.modalities):
             camera_cfg = PinholeCameraCfg(
                 sensor_tick=0,
                 # height=480,
@@ -391,7 +391,10 @@ class ElevatorEnv(IsaacEnv):
         assert (self.num_envs == 1 or self.camera is None), "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
 
         # prepare the observation manager
-        self._observation_manager = ElevatorObservationManager(class_to_dict(self.cfg.observations), self, self.device)
+        obs_cfg_dict = class_to_dict(self.cfg.observations)
+        obs_cfg_dict = {k: v for k, v in obs_cfg_dict.items() if k in self.modalities}
+        self._observation_manager = ElevatorObservationManager(obs_cfg_dict, self, self.device)
+
         # prepare the reward manager
         self._reward_manager = ElevatorRewardManager(
             class_to_dict(self.cfg.rewards), self, self.num_envs, self.dt, self.device
@@ -401,15 +404,25 @@ class ElevatorEnv(IsaacEnv):
         print("[INFO] Reward Manager: ", self._reward_manager)
 
         # compute the observation space
-        policy_obs_name = "policy" # low_dim
-        lowdim_num_obs = self._observation_manager._group_obs_dim[policy_obs_name][0]
-        obs_space_dict = {policy_obs_name: gym.spaces.Box(low=-math.inf, high=math.inf, shape=(lowdim_num_obs,))}
-        if(self.camera is not None):
-            rgb_num_obs = self._observation_manager._group_obs_dim["rgb"]
-            obs_space_dict["rgb"] = gym.spaces.Box(low=0, high=255, shape=rgb_num_obs, dtype=np.uint8)
-            self.observation_space = gym.spaces.Dict(obs_space_dict)
-        else: # return only a flattend observation space
-            self.observation_space = obs_space_dict[policy_obs_name]
+        modality_space_dict = {}
+        for ob in self.modalities:
+            if(ob == "rgb"):
+                rgb_num_obs = self._observation_manager._group_obs_dim["rgb"]
+                modality_space_dict["rgb"] = gym.spaces.Box(low=0, high=255, shape=rgb_num_obs, dtype=np.uint8)
+            else:
+                num_obs = self._observation_manager._group_obs_dim[ob][0]
+                modality_space_dict[ob] = gym.spaces.Box(low=-math.inf, high=math.inf, shape=(num_obs,))
+
+        obs_space_dict = {}
+        for k,v in self.cfg.observation_grouping.items():
+            if(type(v) == list):
+                obs_space_dict[k] = gym.spaces.Dict({k2: modality_space_dict[k2] for k2 in v})
+            elif(type(v) == str):
+                obs_space_dict[k] = modality_space_dict[v]
+            else:
+                obs_space_dict[k] = modality_space_dict[k]
+        self.observation_space = gym.spaces.Dict(obs_space_dict)
+        print("[INFO] Observation Space: ", self.observation_space)
 
         # compute the action space
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(self.num_actions,))
@@ -566,7 +579,17 @@ class ElevatorEnv(IsaacEnv):
 
     def _get_observations(self) -> VecEnvObs:
         # compute observations
-        return self._observation_manager.compute()
+        obs = self._observation_manager.compute()
+        # build return observation dict
+        obs_dict = {}
+        for k,v in self.cfg.observation_grouping.items():
+            if(type(v) == list):
+                obs_dict[k] = {k2: obs[k2] for k2 in v}
+            elif(type(v) == str):
+                obs_dict[k] = obs[v]
+            else:
+                obs_dict[k] = obs[k]
+        return obs_dict
 
     """
     Helper functions - Scene handling.
@@ -586,6 +609,18 @@ class ElevatorEnv(IsaacEnv):
             self.cfg.control.inverse_kinematics.rotation_offset = self.cfg.robot.ee_info.rot_offset
         else:
             print("Using default joint controller...")
+
+        # Only Keep the observations that are used in observation grouping
+        modalities = []
+        for k,v in self.cfg.observation_grouping.items():
+            if(type(v) == list):
+                modalities += v
+            elif(type(v) == str):
+                modalities.append(v)
+            else:
+                modalities.append(k)
+        self.modalities = set(modalities)
+        print("[INFO] Observation modalities: ", self.modalities)
 
     def _process_cfg(self) -> None:
         """Post processing of configuration parameters."""

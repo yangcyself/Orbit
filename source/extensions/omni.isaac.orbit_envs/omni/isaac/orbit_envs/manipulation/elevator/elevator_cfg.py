@@ -17,14 +17,6 @@ from omni.isaac.orbit_envs.isaac_env_cfg import EnvCfg, IsaacEnvCfg, SimCfg, Vie
 
 
 @configclass
-class TableCfg:
-    """Properties for the table."""
-
-    # note: we use instanceable asset since it consumes less memory
-    usd_path = f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
-
-
-@configclass
 class MarkerCfg:
     """Properties for visualization marker."""
 
@@ -95,8 +87,8 @@ class ObservationsCfg:
     """Whether to return observations as dictionary or flattened vector within groups."""
     # observation groups
     low_dim: LowDimCfg = LowDimCfg()
-    # rgb: RGBCfg = RGBCfg()
-    # privilege: PrivilegeCfg = PrivilegeCfg()
+    rgb: RGBCfg = RGBCfg()
+    privilege: PrivilegeCfg = PrivilegeCfg()
 
 
 @configclass
@@ -156,7 +148,6 @@ class ElevatorEnvCfg(IsaacEnvCfg):
 
     # Scene Settings
     robot: MobileManipulatorCfg = RIDGEBACK_FRANKA_PANDA_CFG
-    table: TableCfg = TableCfg()
     marker: MarkerCfg = MarkerCfg()
 
     # MDP settings
@@ -169,3 +160,7 @@ class ElevatorEnvCfg(IsaacEnvCfg):
 
     # Initialization settings
     initialization: InitializationCfg = InitializationCfg()
+
+    # workflow settings
+    # A list of tuples {group_name: [list of observation names]} to be used for observation grouping
+    observation_grouping = {}
