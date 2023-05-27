@@ -27,7 +27,7 @@ from omni.isaac.orbit.markers import PointMarker, StaticMarker
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
 from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
 from omni.isaac.orbit.utils.dict import class_to_dict
-from omni.isaac.orbit.utils.math import scale_transform, sample_uniform
+from omni.isaac.orbit.utils.math import quat_apply, quat_mul, scale_transform, sample_uniform
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
 
 from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
@@ -211,55 +211,6 @@ class ElevatorSm:
         return self.door_state.bool()
 
 
-@wp.kernel
-def frameTransform(
-    trans_in_0: wp.array(dtype=wp.vec3),
-    quat_in_0: wp.array(dtype=wp.quat),
-    trans_in_1: wp.array(dtype=wp.vec3),
-    rpy_in_1: wp.array(dtype=wp.vec3),
-    trans_out: wp.array(dtype=wp.vec3),
-    rpy_out: wp.array(dtype=wp.vec3),
-):
-    """Compute translation and quaternion: transformation0 * transformation1"""
-    tid = wp.tid()
-    transform0 = wp.transform(trans_in_0[tid], quat_in_0[tid])
-    trans_out[tid] = wp.transform_vector(transform0, trans_in_1[tid])
-    rpy_out[tid] = wp.transform_vector(transform0, rpy_in_1[tid])
-
-
-class FrameTransformer:
-    def __init__(self, num_envs: int, device: Union[torch.device, str] = "cpu"):
-        self.num_envs = num_envs
-        self.device = device
-        self.trans_out = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
-        self.rpy_out = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
-        self.trans_out_wp = wp.from_torch(self.trans_out, wp.vec3)
-        self.rpy_out_wp = wp.from_torch(self.rpy_out, wp.vec3)
-
-    def compute(self, trans_in_0=None, quat_in_0=None, trans_in_1=None, rpy_in_1=None):
-        if trans_in_0 is None:
-            trans_in_0 = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
-        if quat_in_0 is None:
-            quat_in_0 = torch.zeros((self.num_envs, 4), dtype=torch.float32, device=self.device)
-            quat_in_0[:, 0] = 1.0
-        if trans_in_1 is None:
-            trans_in_1 = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
-        if rpy_in_1 is None:
-            rpy_in_1 = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
-        trans_in_0_wp = wp.from_torch(trans_in_0.to(dtype=torch.float32, device=self.device), wp.vec3)
-        quat_in_0_wp = wp.from_torch(quat_in_0[:, [1, 2, 3, 0]].to(dtype=torch.float32, device=self.device), wp.quat)
-        trans_in_1_wp = wp.from_torch(trans_in_1.to(dtype=torch.float32, device=self.device), wp.vec3)
-        rpy_in_1_wp = wp.from_torch(rpy_in_1.to(dtype=torch.float32, device=self.device), wp.vec3)
-
-        wp.launch(
-            kernel=frameTransform,
-            dim=self.num_envs,
-            inputs=[trans_in_0_wp, quat_in_0_wp, trans_in_1_wp, rpy_in_1_wp, self.trans_out_wp, self.rpy_out_wp],
-        )
-        wp.synchronize()
-        return self.trans_out, self.rpy_out
-
-
 class Elevator:
     """
     simple class for elevator.
@@ -438,7 +389,6 @@ class ElevatorEnv(IsaacEnv):
         self._initialize_views()
 
         assert (self.num_envs == 1 or self.camera is None), "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
-        self.frame_transfrom = FrameTransformer(self.num_envs, device="cuda")
 
         # prepare the observation manager
         self._observation_manager = ElevatorObservationManager(class_to_dict(self.cfg.observations), self, self.device)
@@ -551,7 +501,8 @@ class ElevatorEnv(IsaacEnv):
             ee_quad = self.robot.data.ee_state_w[:, 3:7]
             cmd_trans = self.actions[:, self.robot.base_num_dof : self.robot.base_num_dof + 3]
             cmd_quad = self.actions[:, self.robot.base_num_dof + 3 : self.robot.base_num_dof + 6]
-            cmd_trans_rotated, cmd_quad_rotated = self.frame_transfrom.compute(None, ee_quad, cmd_trans, cmd_quad)
+            cmd_trans_rotated = quat_apply(ee_quad, cmd_trans)
+            cmd_quad_rotated = quat_apply(ee_quad, cmd_quad)
             ik_cmd = torch.cat([cmd_trans_rotated, cmd_quad_rotated], 1).to(device=self.device)
             self._ik_controller.set_command(ik_cmd)
             # compute the joint commands
