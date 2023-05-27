@@ -27,7 +27,7 @@ from omni.isaac.orbit.markers import PointMarker, StaticMarker
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
 from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
 from omni.isaac.orbit.utils.dict import class_to_dict
-from omni.isaac.orbit.utils.math import quat_apply, quat_mul, scale_transform, sample_uniform
+from omni.isaac.orbit.utils.math import quat_apply, quat_mul, scale_transform, sample_uniform, matrix_from_quat
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
 
 from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
@@ -770,6 +770,31 @@ class ElevatorRewardManager(RewardManager):
     def penalizing_collision(self, env:ElevatorEnv):
         """Penalize collision"""
         return (env.rigidContacts.get_net_contact_forces().abs().sum(axis = -1).reshape(env.num_envs,-1).sum(axis = -1)>0.1).to(torch.float32)
+
+    def penalizing_camera_lin_vel_l2(self, env:ElevatorEnv):
+        """Penalize camera movement"""
+        lin_vel = env.robot.data.ee_state_w[:,7:10]
+        return torch.sum(torch.square(lin_vel), dim=1)
+
+    def penalizing_camera_ang_vel_l2(self, env:ElevatorEnv):
+        """Penalize camera movement"""
+        ang_vel = env.robot.data.ee_state_w[:,10:13]
+        return torch.sum(torch.square(ang_vel), dim=1)
+
+    def penalizing_nonflat_camera_l2(self, env:ElevatorEnv):
+        axis_z = matrix_from_quat(env.robot.data.ee_state_w[:, 3:7])[:,2,:]
+        w = torch.tensor([[0.5,0.,1.]], device = env.device)
+        ref = torch.tensor([[1.,0.,0.]], device = env.device)
+        return torch.sum(torch.square(axis_z - ref) * w, dim=1)
+
+    def look_at_moving_direction(self, env:ElevatorEnv):
+        """
+        Make the camera look at the moving direction of the robot
+        """
+        # The x,y direction of the camera
+        lookDir = matrix_from_quat(env.robot.data.ee_state_w[:, 3:7])[:,:2,2]
+        baseVelDir = env.robot.data.base_dof_vel[:,:2]
+        return torch.sum(lookDir * baseVelDir, dim=-1) / (torch.norm(baseVelDir, dim=-1) + 0.2)
 
     def tracking_reference_points(self, env: ElevatorEnv, sigma):
         

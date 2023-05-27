@@ -102,6 +102,11 @@ class RewardsCfg:
     penalizing_collision = {"weight": -1.}
     tracking_reference_points = {"weight": 2., "sigma": 0.5}
 
+    penalizing_camera_lin_vel_l2 = {"weight": -0.1}
+    penalizing_camera_ang_vel_l2 = {"weight": -0.01}
+    penalizing_nonflat_camera_l2 = {"weight": -0.3}
+    look_at_moving_direction = {"weight": 0.02}
+
 
 @configclass
 class TerminationsCfg:
