@@ -393,6 +393,7 @@ class ElevatorEnv(IsaacEnv):
         # prepare the observation manager
         obs_cfg_dict = class_to_dict(self.cfg.observations)
         obs_cfg_dict = {k: v for k, v in obs_cfg_dict.items() if k in self.modalities}
+        obs_cfg_dict["return_dict_obs_in_group"] = self.cfg.observations.return_dict_obs_in_group
         self._observation_manager = ElevatorObservationManager(obs_cfg_dict, self, self.device)
 
         # prepare the reward manager

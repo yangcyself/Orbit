@@ -46,7 +46,9 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     env_cfg.observations.return_dict_obs_in_group = False
-    env_cfg.terminations.is_success = True
+    env_cfg.terminations.is_success = False
+    env_cfg.terminations.collision = True
+    env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
     agent_cfg = parse_rslrl_cfg(args_cli.task)
 
     # create isaac environment

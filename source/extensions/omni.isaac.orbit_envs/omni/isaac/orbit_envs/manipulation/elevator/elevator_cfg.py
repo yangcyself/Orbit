@@ -82,7 +82,6 @@ class ObservationsCfg:
 
 
     # global observation settings
-    policy: PrivilegeCfg = PrivilegeCfg()
     return_dict_obs_in_group = True
     """Whether to return observations as dictionary or flattened vector within groups."""
     # observation groups

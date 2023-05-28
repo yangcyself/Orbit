@@ -101,7 +101,7 @@ def main():
         # pre-process actions
         actions = pre_process_actions(base_cmd, delta_pose, gripper_command)
         # apply actions
-        obs, rew, _, _ = env.step(actions)
+        obs, rew, downs, info = env.step(actions)
         if(rew.shape[0]>1):
             print({kk:{k: v[0,...] - v[1,...] for k,v in vv.items() } for kk,vv in obs.items()})
             print("reward", rew[0] - rew[1])
