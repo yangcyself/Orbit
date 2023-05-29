@@ -793,14 +793,14 @@ class ElevatorRewardManager(RewardManager):
         ref = torch.tensor([[1.,0.,0.]], device = env.device)
         return torch.sum(torch.square(axis_z - ref) * w, dim=1)
 
-    def look_at_moving_direction(self, env:ElevatorEnv):
+    def look_at_moving_direction_exp(self, env:ElevatorEnv, sigma):
         """
         Make the camera look at the moving direction of the robot
         """
         # The x,y direction of the camera
         lookDir = matrix_from_quat(env.robot.data.ee_state_w[:, 3:7])[:,:2,2]
         baseVelDir = env.robot.data.base_dof_vel[:,:2]
-        return torch.sum(lookDir * baseVelDir, dim=-1) / (torch.norm(baseVelDir, dim=-1) + 0.2)
+        return torch.exp(- torch.sum(lookDir * baseVelDir, dim=-1) / (torch.norm(baseVelDir, dim=-1) + 0.2) / sigma) - 1.
 
     def tracking_reference_points(self, env: ElevatorEnv, sigma):
         
@@ -820,7 +820,7 @@ class ElevatorRewardManager(RewardManager):
 
         reward[ elevator_state[:,0]>0 ] = 3. # No reward gradient for button pushing when elevator is not at rest
         robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:2] - env.robot_des_pose_w[:,:2], dim=1)
-        robot_pos_reward = 6 * torch.exp(-robot_pos_error / sigma / 4.)
+        robot_pos_reward = 2 * torch.exp(-robot_pos_error / sigma / 4.)
         
         # no reward if the door is closed and robot is outside of the elevator
         robot_pos_reward[(elevator_state[:,0] > 1) & (robot_pos_error > 1)] = 0.

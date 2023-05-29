@@ -99,12 +99,12 @@ class RewardsCfg:
     # penalizing_action_rate_l2 = {"weight": -0.1}
     penalizing_action_l2 = {"weight": -0.5}
     penalizing_collision = {"weight": -10.}
-    tracking_reference_points = {"weight": 2., "sigma": 0.5}
+    tracking_reference_points = {"weight": 6., "sigma": 0.5}
 
     penalizing_camera_lin_vel_l2 = {"weight": -1}
     penalizing_camera_ang_vel_l2 = {"weight": -0.1}
-    penalizing_nonflat_camera_l2 = {"weight": -0.6}
-    look_at_moving_direction = {"weight": 2.}
+    penalizing_nonflat_camera_l2 = {"weight": -0.2}
+    look_at_moving_direction_exp = {"weight": -0.02, "sigma": 0.15}
 
 
 @configclass
