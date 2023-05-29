@@ -737,7 +737,7 @@ class ElevatorObservationManager(ObservationManager):
     
     def elevator_waittime(self, env: ElevatorEnv):
         """The state of the elevator"""
-        return (env.elevator._sm.sm_wait_time/40).reshape((env.num_envs, 1)).to(env.device)
+        return (env.elevator._sm.sm_wait_time/30).reshape((env.num_envs, 1)).to(env.device)
 
     def hand_camera_rgb(self, env: ElevatorEnv):
         """RGB camera observations.
@@ -824,6 +824,7 @@ class ElevatorRewardManager(RewardManager):
         
         # no reward if the door is closed and robot is outside of the elevator
         robot_pos_reward[(elevator_state[:,0] > 1) & (robot_pos_error > 1)] = 0.
+        robot_pos_reward[(elevator_state[:,0] > 1) & (robot_pos_error < 1)] *= 2.
         reward[elevator_state[:,0] > 0] += robot_pos_reward[elevator_state[:,0] > 0]
 
         return reward

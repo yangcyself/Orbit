@@ -94,17 +94,17 @@ class ObservationsCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    penalizing_robot_dof_velocity_l2 = {"weight": -0.1}  # -1e-4
+    penalizing_robot_dof_velocity_l2 = {"weight": -0.2}  # -1e-4
     penalizing_robot_dof_acceleration_l2 = {"weight": -2e-5}
     # penalizing_action_rate_l2 = {"weight": -0.1}
     penalizing_action_l2 = {"weight": -0.5}
-    penalizing_collision = {"weight": -10.}
+    penalizing_collision = {"weight": -1.}
     tracking_reference_points = {"weight": 6., "sigma": 0.5}
 
     penalizing_camera_lin_vel_l2 = {"weight": -1}
-    penalizing_camera_ang_vel_l2 = {"weight": -0.1}
+    penalizing_camera_ang_vel_l2 = {"weight": -0.5}
     penalizing_nonflat_camera_l2 = {"weight": -0.2}
-    look_at_moving_direction_exp = {"weight": -0.02, "sigma": 0.15}
+    look_at_moving_direction_exp = {"weight": -0.02, "sigma": 0.2}
 
 
 @configclass
