@@ -545,6 +545,9 @@ class ElevatorEnv(IsaacEnv):
             self.robot_actions[:, -1] = self.actions[:, -1]
         elif self.cfg.control.control_type == "default":
             self.robot_actions[:, :] = self.actions
+        elif self.cfg.control.control_type == "ohneHand":
+            self.robot_actions[:, :-1] = self.actions
+            self.robot_actions[:, -1] = -1.0
         # perform physics stepping
         for _ in range(self.cfg.control.decimation):
             # set actions into buffers
@@ -572,7 +575,7 @@ class ElevatorEnv(IsaacEnv):
         # Note: this is used by algorithms like PPO where time-outs are handled differently
         self.extras["time_outs"] = self.episode_length_buf >= self.max_episode_length
         robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
-        self.extras["is_success"] = torch.where(robot_pos_error < 1, 1, 0)
+        self.extras["is_success"] = torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0)
         # -- update USD visualization
         if self.cfg.viewer.debug_vis and self.enable_render:
             self._debug_vis()
@@ -655,6 +658,8 @@ class ElevatorEnv(IsaacEnv):
             self.num_actions = self.robot.base_num_dof + self._ik_controller.num_actions + 1
         elif self.cfg.control.control_type == "default":
             self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof + 1
+        elif self.cfg.control.control_type == "ohneHand":
+            self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof
 
         # history
         self.actions = torch.zeros((self.num_envs, self.num_actions), device=self.device)
@@ -689,7 +694,7 @@ class ElevatorEnv(IsaacEnv):
         # -- episode length
         if self.cfg.terminations.is_success:
             robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
-            self.reset_buf = torch.where(robot_pos_error < 1, 1, self.reset_buf)
+            self.reset_buf = torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, self.reset_buf)
         if self.cfg.terminations.episode_timeout:
             self.reset_buf = torch.where(self.episode_length_buf >= self.max_episode_length, 1, self.reset_buf)
         if self.cfg.terminations.collision:

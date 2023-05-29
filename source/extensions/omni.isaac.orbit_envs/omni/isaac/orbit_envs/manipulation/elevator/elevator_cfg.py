@@ -94,17 +94,17 @@ class ObservationsCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    penalizing_robot_dof_velocity_l2 = {"weight": -0.2}  # -1e-4
-    penalizing_robot_dof_acceleration_l2 = {"weight": -1e-5}
+    penalizing_robot_dof_velocity_l2 = {"weight": -0.1}  # -1e-4
+    penalizing_robot_dof_acceleration_l2 = {"weight": -2e-5}
     # penalizing_action_rate_l2 = {"weight": -0.1}
-    penalizing_action_l2 = {"weight": -1}
-    penalizing_collision = {"weight": -1.}
+    penalizing_action_l2 = {"weight": -0.5}
+    penalizing_collision = {"weight": -10.}
     tracking_reference_points = {"weight": 2., "sigma": 0.5}
 
-    penalizing_camera_lin_vel_l2 = {"weight": -0.1}
-    penalizing_camera_ang_vel_l2 = {"weight": -0.01}
-    penalizing_nonflat_camera_l2 = {"weight": -0.3}
-    look_at_moving_direction = {"weight": 0.02}
+    penalizing_camera_lin_vel_l2 = {"weight": -1}
+    penalizing_camera_ang_vel_l2 = {"weight": -0.1}
+    penalizing_nonflat_camera_l2 = {"weight": -0.6}
+    look_at_moving_direction = {"weight": 2.}
 
 
 @configclass
@@ -113,6 +113,7 @@ class TerminationsCfg:
 
     episode_timeout = True  # reset when episode length ended
     is_success = True  # reset when robot is in elevator
+    is_success_threshold = 0.5  # distance to elevator center
     collision = True  # reset when robot collides with the elevator
 
 
@@ -121,7 +122,7 @@ class ControlCfg:
     """Processing of MDP actions."""
 
     # action space
-    control_type = "default"  # "default", "inverse_kinematics"
+    control_type = "ohneHand"  # "default", "inverse_kinematics", "ohneHand"
     # decimation: Number of control action updates @ sim dt per policy dt
     decimation = 2
 
