@@ -40,8 +40,8 @@ import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
 
 
-CHECK_SAME_OBS_REWARD = True
-PRINT_REWARD_BREAKDOWN = False
+CHECK_SAME_OBS_REWARD = False
+PRINT_REWARD_BREAKDOWN = True
 
 def pre_process_actions(base_vel: torch.Tensor, delta_pose: torch.Tensor, gripper_command: bool) -> torch.Tensor:
     """Pre-process actions for the environment."""
@@ -67,10 +67,15 @@ def main():
         env_cfg.num_envs = 2
         # disable any randomness in initialization
         env_cfg.initialization.robot.position_cat = "default"
-        env_cfg.initialization.elevator.wait_elevator_prob = -1 #set to -1 for close door, set to 2 for wait elevator
+        env_cfg.initialization.elevator.moving_elevator_prob = -1 #set to -1 for close door, set to 2 for wait elevator
+        env_cfg.initialization.elevator.nonzero_floor_prob = -1
         env_cfg.initialization.elevator.max_init_wait_time = 0
     else:
-        env_cfg.observation_grouping = {"rgb":None}
+        env_cfg.observation_grouping = {"rgb":None,"privilege":None}
+        env_cfg.initialization.elevator.moving_elevator_prob = -1
+        env_cfg.initialization.elevator.nonzero_floor_prob = -1
+        env_cfg.initialization.elevator.max_init_wait_time = 0
+        env_cfg.initialization.elevator.max_init_floor = 2
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=args_cli.headless)
     # check environment name (for reach , we don't allow the gripper)
@@ -137,9 +142,10 @@ def main():
             break
         
         if (PRINT_REWARD_BREAKDOWN):
-            for k,v in env.reward_manager.episode_sums.items():
-                print(f"{k}: ", v - episodic_rewards[k])
-                episodic_rewards[k] = v.clone()
+            print("#### elevator_state", obs["privilege"]["elevator_state"])
+            print("#### elevator_is_zerofloor", obs["privilege"]["elevator_is_zerofloor"])
+            for k,v in step_rewards.items():
+                print(f"{k}: ", v)
 
     # close the simulator
     env.close()

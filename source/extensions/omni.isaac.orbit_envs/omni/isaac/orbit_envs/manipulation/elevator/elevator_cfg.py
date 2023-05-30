@@ -46,8 +46,10 @@ class InitializationCfg:
     
     @configclass
     class ElevatorStateCfg:
-        wait_elevator_prob = 0.5
+        moving_elevator_prob = 0.4
+        nonzero_floor_prob = 0.4
         max_init_wait_time = 25.
+        max_init_floor = 2
     # initialize
     robot: RobotPosCfg = RobotPosCfg()
     elevator: ElevatorStateCfg = ElevatorStateCfg()
@@ -109,7 +111,7 @@ class RewardsCfg:
     tracking_reference_button_rot = {"weight": 3., "sigma": 0.1}
     tracking_reference_enter = {"weight": 5., "sigma": 6}
     tracking_reference_waitin = {"weight": 10., "sigma": 0.5}
-    tracking_reference_waitout = {"weight": 2., "sigma": 10}
+    tracking_reference_waitout = {"weight": 5., "sigma": 10}
 
     penalizing_camera_lin_vel_l2 = {"weight": -1}
     penalizing_camera_ang_vel_l2 = {"weight": -0.5}
