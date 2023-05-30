@@ -17,7 +17,7 @@ parser = argparse.ArgumentParser("Welcome to Orbit: Omniverse Robotics Environme
 parser.add_argument("--headless", action="store_true", default=False, help="Force display off at all times.")
 parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
-parser.add_argument("--checkpoint", type=str, default=None, help="Pytorch model checkpoint to load.")
+parser.add_argument("--checkpoints", type=str, default=None, help="the pytorch checkpoints to load. Use __e__ as a placeholder for epoch number.")
 args_cli = parser.parse_args()
 args_cli.task = "Isaac-Elevator-Franka-v0"
 # launch the simulator
@@ -40,6 +40,11 @@ from robomimic.envs.env_gym import EnvGym
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
+from robomimic.utils.log_utils import DataLogger
+from glob import glob
+import re
+import os
+
 
 
 class RobomimicWrapper(RolloutPolicy):
@@ -56,7 +61,6 @@ class RobomimicWrapper(RolloutPolicy):
         self.policy._prepare_observation(ob)
 
     def __call__(self, ob, goal=None):
-        print(ob)
         obs = {f"{kk}:{k}":v[0] for kk,vv in ob.items() for k,v in vv.items()}
         obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
         return torch.tensor(self.policy(obs)).to(self.device)[None,...]
@@ -89,7 +93,7 @@ class myEnvGym(EnvGym):
         self._current_obs = obs
         self._current_reward = reward
         self._current_done = done
-        return self.get_observation(obs), reward, self.is_done(), info
+        return self.get_observation(obs), reward.detach().cpu().numpy(), self.is_done(), info
 
 
     
@@ -100,6 +104,7 @@ def main():
     # modify configuration
     # env_cfg.control.control_type = "inverse_kinematics"
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
+    env_cfg.env.episode_length_s = 6.0
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = False
@@ -113,36 +118,46 @@ def main():
 
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
-    # restore policy
-    policy = RobomimicWrapper(args_cli.checkpoint, device)
 
-    # reset environment
-    obs_dict = env.reset()
-    # robomimic only cares about policy observations
-    # print("Observation",{k: (v.shape, v.shape) for k, v in obs.items()})
-    # simulate environment
-    num_episodes = 10
-    all_rollout_logs, video_paths = TrainUtils.rollout_with_stats(
-        policy=policy,
-        envs={"orbit": env},
-        horizon=1000,
-        use_goals=False,
-        num_episodes=num_episodes,
-        render=False,
-        video_dir=None,
-        epoch=100, # TODO
-        video_skip=5,
-        terminate_on_success=True,
-    )
-    print("ALL ROllOUT Logs", all_rollout_logs)
-    print("VIDEO_PATHS", video_paths)
-    # for env_name in all_rollout_logs:
-    # rollout_logs = all_rollout_logs[env_name]
-    # for k, v in rollout_logs.items():
-    #     if k.startswith("Time_"):
-    #         data_logger.record("Timing_Stats/Rollout_{}_{}".format(env_name, k[5:]), v, epoch)
-    #     else:
-    #         data_logger.record("Rollout/{}/{}".format(k, env_name), v, epoch, log_stats=True)
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(args_cli.checkpoints)),"logs")
+    data_logger = DataLogger(log_dir, log_tb=True)
+
+    for f in glob(args_cli.checkpoints.replace("__e__", "*")):
+        m = re.search(args_cli.checkpoints.replace("__e__", "(\d+)"), f)
+        if not m:
+            continue
+        print("Loading checkpoint", f)
+        epoch = int(m.group(1))
+
+        # restore policy
+        policy = RobomimicWrapper(f, device)
+
+        # reset environment
+        obs_dict = env.reset()
+        # robomimic only cares about policy observations
+        # print("Observation",{k: (v.shape, v.shape) for k, v in obs.items()})
+        # simulate environment
+        num_episodes = 500
+        all_rollout_logs, video_paths = TrainUtils.rollout_with_stats(
+            policy=policy,
+            envs={"orbit": env},
+            horizon=1000,
+            use_goals=False,
+            num_episodes=num_episodes,
+            render=False,
+            video_dir=None,
+            epoch=epoch, # TODO
+            video_skip=5,
+            terminate_on_success=True,
+        )
+
+        for env_name in all_rollout_logs:
+            rollout_logs = all_rollout_logs[env_name]
+            for k, v in rollout_logs.items():
+                if k.startswith("Time_"):
+                    data_logger.record(f"Timing_Stats/Rollout_{env_name}_{k[5:]}", v, epoch)
+                else:
+                    data_logger.record(f"Rollout/{k}/{env_name}", v, epoch, log_stats=True)
 
     # close the simulator
     env.close()

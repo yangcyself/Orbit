@@ -397,12 +397,12 @@ class ElevatorEnv(IsaacEnv):
         self._observation_manager = ElevatorObservationManager(obs_cfg_dict, self, self.device)
 
         # prepare the reward manager
-        self._reward_manager = ElevatorRewardManager(
+        self.reward_manager = ElevatorRewardManager(
             class_to_dict(self.cfg.rewards), self, self.num_envs, self.dt, self.device
         )
         # print information about MDP
         print("[INFO] Observation Manager:", self._observation_manager)
-        print("[INFO] Reward Manager: ", self._reward_manager)
+        print("[INFO] Reward Manager: ", self.reward_manager)
 
         # compute the observation space
         modality_space_dict = {}
@@ -485,6 +485,7 @@ class ElevatorEnv(IsaacEnv):
 
         # -- init pose
         self._randomize_robot_initial_pose(env_ids=env_ids)
+        self._randomize_elevator_initial_state(env_ids=env_ids)
 
         # --desire position
         self.robot_des_pose_w[env_ids, 0:2] =  torch.tensor([[1.53,-2.08]], device = self.device)
@@ -494,7 +495,7 @@ class ElevatorEnv(IsaacEnv):
         self.extras["episode"] = dict()
         # reset
         # -- rewards manager: fills the sums for terminated episodes
-        self._reward_manager.reset_idx(env_ids, self.extras["episode"])
+        self.reward_manager.reset_idx(env_ids, self.extras["episode"])
         # -- obs manager
         self._observation_manager.reset_idx(env_ids)
         # -- reset history
@@ -565,7 +566,7 @@ class ElevatorEnv(IsaacEnv):
             self.camera.update(dt=self.dt)
         # -- compute MDP signals
         # reward
-        self.reward_buf = self._reward_manager.compute()
+        self.reward_buf = self.reward_manager.compute()
         # terminations
         self._check_termination()
         # -- store history
@@ -711,6 +712,12 @@ class ElevatorEnv(IsaacEnv):
             )
             self.robot.set_dof_state(dof, dof_vel, env_ids=env_ids)
 
+    def _randomize_elevator_initial_state(self, env_ids: torch.Tensor):
+        waitElevatorFlag = torch.rand((len(env_ids),),device=self.device) < self.cfg.initialization.elevator.wait_elevator_prob
+        self.elevator._sm.sm_state[env_ids[waitElevatorFlag], 0] = 3
+        self.elevator._sm.sm_state[env_ids[waitElevatorFlag], 1] = 1
+        self.elevator._sm.sm_wait_time[env_ids[waitElevatorFlag]] = torch.rand(waitElevatorFlag.sum())*20.
+        
 
 class ElevatorObservationManager(ObservationManager):
     """Reward manager for single-arm reaching environment."""
@@ -733,11 +740,15 @@ class ElevatorObservationManager(ObservationManager):
 
     def elevator_state(self, env: ElevatorEnv):
         """The state of the elevator"""
-        return torch.nn.functional.one_hot(env.elevator._sm_state.to(dtype = torch.int64, device = env.device)[:,0], num_classes = 4).to(torch.float32)
+        return torch.nn.functional.one_hot(env.elevator._sm_state[:,0].to(dtype = torch.int64, device = env.device), num_classes = 4).to(torch.float32)
     
     def elevator_waittime(self, env: ElevatorEnv):
-        """The state of the elevator"""
+        """The waittime of the elevator"""
         return (env.elevator._sm.sm_wait_time/30).reshape((env.num_envs, 1)).to(env.device)
+
+    def elevator_is_zerofloor(self, env: ElevatorEnv):
+        """The waittime of the elevator"""
+        return (env.elevator._sm_state[:,1].to(dtype = torch.int64, device = env.device) == 0).to(dtype = torch.float32, device = env.device)
 
     def hand_camera_rgb(self, env: ElevatorEnv):
         """RGB camera observations.
@@ -802,29 +813,59 @@ class ElevatorRewardManager(RewardManager):
         baseVelDir = env.robot.data.base_dof_vel[:,:2]
         return torch.exp(- torch.sum(lookDir * baseVelDir, dim=-1) / (torch.norm(baseVelDir, dim=-1) + 0.2) / sigma) - 1.
 
-    def tracking_reference_points(self, env: ElevatorEnv, sigma):
-        
+    def tracking_reference_button_pos(self, env: ElevatorEnv, sigma):
         ee_state_w = env.robot.data.ee_state_w[:, :7]
         ee_state_w[:,:3] -= env.envs_positions
+        # make the first element positive
         target_ee_pose_push_btn = torch.tensor([0.3477, -0.7259,  0.1966,  0.2992,  0.6214, -0.5843,  0.4277],
             device = env.device)
-
         error_position = torch.sum(torch.square(ee_state_w[:,:3] - target_ee_pose_push_btn[:3]), dim=1)
-        reward = 2 * torch.exp(-error_position / sigma)
+        reward = torch.exp(-error_position / sigma)
+        
+        elevator_state = env.elevator._sm_state.to(env.device)
+        reward[elevator_state[:,0]==1 ] = 1. # No reward gradient for button pushing when elevator is not at rest
+        reward[(elevator_state[:,0]==2) ] = 0.
+        reward[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] = 0.
+        reward[(elevator_state[:,0]==3) & ((elevator_state[:,2]>0) | elevator_state[:,3]>0 )] = 0.
+        return reward
+
+    def tracking_reference_button_rot(self, env: ElevatorEnv, sigma):
+        ee_state_w = env.robot.data.ee_state_w[:, :7]
         # make the first element positive
         ee_state_w[ee_state_w[:,3]<0, 3:7] *= -1
+
+        target_ee_pose_push_btn = torch.tensor([0.3477, -0.7259,  0.1966,  0.2992,  0.6214, -0.5843,  0.4277],
+                    device = env.device)
         error_rotation = torch.sum(torch.square(ee_state_w[:,3:7] - target_ee_pose_push_btn[3:]), dim=1)
-        reward += torch.exp(-error_rotation / sigma)
-
+        reward = torch.exp(-error_rotation / sigma)
         elevator_state = env.elevator._sm_state.to(env.device)
-
-        reward[ elevator_state[:,0]>0 ] = 3. # No reward gradient for button pushing when elevator is not at rest
-        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:2] - env.robot_des_pose_w[:,:2], dim=1)
-        robot_pos_reward = 2 * torch.exp(-robot_pos_error / sigma / 4.)
-        
-        # no reward if the door is closed and robot is outside of the elevator
-        robot_pos_reward[(elevator_state[:,0] > 1) & (robot_pos_error > 1)] = 0.
-        robot_pos_reward[(elevator_state[:,0] > 1) & (robot_pos_error < 1)] *= 2.
-        reward[elevator_state[:,0] > 0] += robot_pos_reward[elevator_state[:,0] > 0]
-
+        reward[elevator_state[:,0]==1 ] = 1. # No reward gradient for button pushing when elevator is not at rest
+        reward[(elevator_state[:,0]==2) ] = 0.
+        reward[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] = 0.
+        reward[(elevator_state[:,0]==3) & ((elevator_state[:,2]> 0) | elevator_state[:,3]> 0 )] = 0.
         return reward
+
+    def tracking_reference_enter(self, env: ElevatorEnv, sigma):        
+        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:2] - env.robot_des_pose_w[:,:2], dim=1)
+        reward = torch.exp(-robot_pos_error / sigma)
+        elevator_state = env.elevator._sm_state.to(env.device)
+        reward[(elevator_state[:,0] != 1)] = 0.
+        return reward
+
+    def tracking_reference_waitin(self, env: ElevatorEnv, sigma):
+        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:2] - env.robot_des_pose_w[:,:2], dim=1)
+        reward = torch.exp(-robot_pos_error / sigma)
+        # no reward if the door is closed and robot is outside of the elevator
+        elevator_state = env.elevator._sm_state.to(env.device)
+        reward[(elevator_state[:,0] <= 1) & (elevator_state[:,1] != 0)] = 0.
+        return reward
+    
+    def tracking_reference_waitout(self, env: ElevatorEnv, sigma):
+        target_base_pose_waitout = torch.tensor([[1.6093,  0.4073, -1.6123]], device = env.device)
+        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:3] - target_base_pose_waitout, dim=1)
+        reward = torch.exp(-robot_pos_error / sigma)
+        # no reward if the door is closed and robot is outside of the elevator
+        elevator_state = env.elevator._sm_state.to(env.device)
+        reward[elevator_state[:,1] == 0] = 0.
+        return reward
+

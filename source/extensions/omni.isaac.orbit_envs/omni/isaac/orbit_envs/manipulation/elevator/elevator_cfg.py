@@ -43,10 +43,13 @@ class InitializationCfg:
         # randomize position
         position_uniform_min = [0.9, 0.3, -3.1]  # position (x,y,z)
         position_uniform_max = [2.1, 2., 0.]  # position (x,y,z)
-
+    
+    @configclass
+    class ElevatorStateCfg:
+        wait_elevator_prob = 0.5
     # initialize
     robot: RobotPosCfg = RobotPosCfg()
-
+    elevator: ElevatorStateCfg = ElevatorStateCfg()
 
 @configclass
 class ObservationsCfg:
@@ -99,7 +102,12 @@ class RewardsCfg:
     # penalizing_action_rate_l2 = {"weight": -0.1}
     penalizing_action_l2 = {"weight": -0.5}
     penalizing_collision = {"weight": -1.}
-    tracking_reference_points = {"weight": 6., "sigma": 0.5}
+
+    tracking_reference_button_pos = {"weight": 5., "sigma": 2.}
+    tracking_reference_button_rot = {"weight": 3., "sigma": 0.1}
+    tracking_reference_enter = {"weight": 5., "sigma": 6}
+    tracking_reference_waitin = {"weight": 10., "sigma": 0.5}
+    tracking_reference_waitout = {"weight": 2., "sigma": 10}
 
     penalizing_camera_lin_vel_l2 = {"weight": -1}
     penalizing_camera_ang_vel_l2 = {"weight": -0.5}
@@ -146,7 +154,7 @@ class ElevatorEnvCfg(IsaacEnvCfg):
 
     # General Settings
     # env: EnvCfg = EnvCfg(num_envs=2048, env_spacing=2.5, episode_length_s=4.0)
-    env: EnvCfg = EnvCfg(num_envs=16, env_spacing=16, episode_length_s=50.0)
+    env: EnvCfg = EnvCfg(num_envs=16, env_spacing=16, episode_length_s=8.0)
     viewer: ViewerCfg = ViewerCfg(debug_vis=False, eye=(7.5, 7.5, 7.5), lookat=(0.0, 0.0, 0.0))
     # Physics settings
     sim: SimCfg = SimCfg(dt=1.0 / 60.0, substeps=1)

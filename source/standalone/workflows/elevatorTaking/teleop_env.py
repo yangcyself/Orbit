@@ -90,6 +90,8 @@ def main():
     teleop_interface_base.reset()
     teleop_interface_arm.reset()
 
+    episodic_rewards = {k:v.clone() for k,v in env.reward_manager.episode_sums.items()}
+
     # simulate environment
     while simulation_app.is_running():
         # get keyboard command
@@ -108,6 +110,11 @@ def main():
         # check if simulator is stopped
         if env.unwrapped.sim.is_stopped():
             break
+        
+        # for k,v in env.reward_manager.episode_sums.items():
+        #     if(k.startswith("tracking_reference")):
+        #         print(f"{k}: ", v - episodic_rewards[k])
+        #         episodic_rewards[k] = v.clone()
 
     # close the simulator
     env.close()
