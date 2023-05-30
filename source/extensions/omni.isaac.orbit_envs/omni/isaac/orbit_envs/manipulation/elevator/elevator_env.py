@@ -716,7 +716,7 @@ class ElevatorEnv(IsaacEnv):
         waitElevatorFlag = torch.rand((len(env_ids),),device=self.device) < self.cfg.initialization.elevator.wait_elevator_prob
         self.elevator._sm.sm_state[env_ids[waitElevatorFlag], 0] = 3
         self.elevator._sm.sm_state[env_ids[waitElevatorFlag], 1] = 1
-        self.elevator._sm.sm_wait_time[env_ids[waitElevatorFlag]] = torch.rand(waitElevatorFlag.sum(), device = self.device)*20.
+        self.elevator._sm.sm_wait_time[env_ids[waitElevatorFlag]] = torch.rand(waitElevatorFlag.sum(), device = "cuda")*20.
         
 
 class ElevatorObservationManager(ObservationManager):
