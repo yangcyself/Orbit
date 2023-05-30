@@ -40,6 +40,9 @@ import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
 
 
+CHECK_SAME_OBS_REWARD = True
+PRINT_REWARD_BREAKDOWN = False
+
 def pre_process_actions(base_vel: torch.Tensor, delta_pose: torch.Tensor, gripper_command: bool) -> torch.Tensor:
     """Pre-process actions for the environment."""
     # resolve gripper command
@@ -58,7 +61,16 @@ def main():
     env_cfg.control.inverse_kinematics.command_type = "pose_rel"
     env_cfg.terminations.episode_timeout = False
     env_cfg.terminations.is_success = False
-    env_cfg.observation_grouping = {"rgb":None}
+    if CHECK_SAME_OBS_REWARD:
+        env_cfg.observation_grouping = {"privilege":None}
+        env_cfg.observations.return_dict_obs_in_group = True
+        env_cfg.num_envs = 2
+        # disable any randomness in initialization
+        env_cfg.initialization.robot.position_cat = "default"
+        env_cfg.initialization.elevator.wait_elevator_prob = -1 #set to -1 for close door, set to 2 for wait elevator
+        env_cfg.initialization.elevator.max_init_wait_time = 0
+    else:
+        env_cfg.observation_grouping = {"rgb":None}
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=args_cli.headless)
     # check environment name (for reach , we don't allow the gripper)
@@ -91,6 +103,7 @@ def main():
     teleop_interface_arm.reset()
 
     episodic_rewards = {k:v.clone() for k,v in env.reward_manager.episode_sums.items()}
+    step_rewards = {k:0 for k,v in env.reward_manager.episode_sums.items()}
 
     # simulate environment
     while simulation_app.is_running():
@@ -104,17 +117,29 @@ def main():
         actions = pre_process_actions(base_cmd, delta_pose, gripper_command)
         # apply actions
         obs, rew, downs, info = env.step(actions)
-        if(rew.shape[0]>1):
-            print({kk:{k: v[0,...] - v[1,...] for k,v in vv.items() } for kk,vv in obs.items()})
-            print("reward", rew[0] - rew[1])
+
+        for k,v in env.reward_manager.episode_sums.items():
+            step_rewards[k] = v - episodic_rewards[k]
+            episodic_rewards[k] = v.clone()
+
+        if(CHECK_SAME_OBS_REWARD):
+            for kk,vv in obs.items():
+                for k,v in vv.items():
+                    if((v[0,...] - v[1,...]).abs().max()>1e-3):
+                        print(f"{k} observation different\n{v[0,...]} \t {v[1,...]}")
+            if(abs(rew[0] - rew[1])>1e-5):
+                print(f"reward different {rew[0]} \t {rew[1]}")
+            for k,v in step_rewards.items():
+                if(abs(v[0] - v[1])>1e-5):
+                    print(f"\t{k}: {v[0]}\t{v[1]}")
         # check if simulator is stopped
         if env.unwrapped.sim.is_stopped():
             break
         
-        # for k,v in env.reward_manager.episode_sums.items():
-        #     if(k.startswith("tracking_reference")):
-        #         print(f"{k}: ", v - episodic_rewards[k])
-        #         episodic_rewards[k] = v.clone()
+        if (PRINT_REWARD_BREAKDOWN):
+            for k,v in env.reward_manager.episode_sums.items():
+                print(f"{k}: ", v - episodic_rewards[k])
+                episodic_rewards[k] = v.clone()
 
     # close the simulator
     env.close()

@@ -716,7 +716,8 @@ class ElevatorEnv(IsaacEnv):
         waitElevatorFlag = torch.rand((len(env_ids),),device=self.device) < self.cfg.initialization.elevator.wait_elevator_prob
         self.elevator._sm.sm_state[env_ids[waitElevatorFlag], 0] = 3
         self.elevator._sm.sm_state[env_ids[waitElevatorFlag], 1] = 1
-        self.elevator._sm.sm_wait_time[env_ids[waitElevatorFlag]] = torch.rand(waitElevatorFlag.sum(), device = "cuda")*20.
+        self.elevator._sm.sm_wait_time[env_ids[waitElevatorFlag]] = torch.rand(waitElevatorFlag.sum(), device = "cuda")\
+            * self.cfg.initialization.elevator.max_init_wait_time
         
 
 class ElevatorObservationManager(ObservationManager):
@@ -748,7 +749,7 @@ class ElevatorObservationManager(ObservationManager):
 
     def elevator_is_zerofloor(self, env: ElevatorEnv):
         """The waittime of the elevator"""
-        return (env.elevator._sm_state[:,1].to(dtype = torch.int64, device = env.device) == 0).to(dtype = torch.float32, device = env.device)
+        return (env.elevator._sm_state[:,1,None].to(dtype = torch.int64, device = env.device) == 0).to(dtype = torch.float32, device = env.device)
 
     def hand_camera_rgb(self, env: ElevatorEnv):
         """RGB camera observations.

@@ -47,6 +47,7 @@ class InitializationCfg:
     @configclass
     class ElevatorStateCfg:
         wait_elevator_prob = 0.5
+        max_init_wait_time = 25.
     # initialize
     robot: RobotPosCfg = RobotPosCfg()
     elevator: ElevatorStateCfg = ElevatorStateCfg()
@@ -78,6 +79,7 @@ class ObservationsCfg:
         # actions = {}
         elevator_state = {}
         elevator_waittime = {}
+        elevator_is_zerofloor = {}
 
     @configclass
     class RGBCfg:
