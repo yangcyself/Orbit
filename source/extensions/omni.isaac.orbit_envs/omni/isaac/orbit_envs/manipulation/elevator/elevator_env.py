@@ -826,7 +826,7 @@ class ElevatorRewardManager(RewardManager):
         reward[elevator_state[:,0]==1 ] = 1. # No reward gradient for button pushing when elevator is not at rest
         reward[(elevator_state[:,0]==2) ] = 0.
         reward[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] = 0.
-        reward[(elevator_state[:,0]==3) & ((elevator_state[:,2]>0) | elevator_state[:,3]>0 )] = 0.
+        reward[(elevator_state[:,0]==3) & ((elevator_state[:,2]>0) | elevator_state[:,3]>0 )] = 1.
         return reward
 
     def tracking_reference_button_rot(self, env: ElevatorEnv, sigma):
@@ -842,7 +842,7 @@ class ElevatorRewardManager(RewardManager):
         reward[elevator_state[:,0]==1 ] = 1. # No reward gradient for button pushing when elevator is not at rest
         reward[(elevator_state[:,0]==2) ] = 0.
         reward[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] = 0.
-        reward[(elevator_state[:,0]==3) & ((elevator_state[:,2]> 0) | elevator_state[:,3]> 0 )] = 0.
+        reward[(elevator_state[:,0]==3) & ((elevator_state[:,2]> 0) | elevator_state[:,3]> 0 )] = 1.
         return reward
 
     def tracking_reference_enter(self, env: ElevatorEnv, sigma):        
