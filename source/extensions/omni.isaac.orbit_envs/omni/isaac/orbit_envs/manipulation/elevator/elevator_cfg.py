@@ -111,11 +111,11 @@ class RewardsCfg:
     tracking_reference_button_rot = {"weight": 3., "sigma": 0.1}
     tracking_reference_enter = {"weight": 5., "sigma": 6}
     tracking_reference_waitin = {"weight": 10., "sigma": 0.5}
-    tracking_reference_waitout = {"weight": 5., "sigma": 10}
+    tracking_reference_waitout = {"weight": 5., "sigma": 2.}
 
-    penalizing_camera_lin_vel_l2 = {"weight": -1}
-    penalizing_camera_ang_vel_l2 = {"weight": -0.5}
-    penalizing_nonflat_camera_l2 = {"weight": -0.2}
+    penalizing_camera_lin_vel_l2 = {"weight": -0.5}
+    penalizing_camera_ang_vel_l2 = {"weight": -2.}
+    penalizing_nonflat_camera_l2 = {"weight": -2.}
     look_at_moving_direction_exp = {"weight": -0.02, "sigma": 0.2}
 
 

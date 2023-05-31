@@ -54,7 +54,7 @@ def main():
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=args_cli.headless)
     # wrap around environment for rsl-rl
-    env = RslRlVecEnvWrapper(env)
+    rslenv = RslRlVecEnvWrapper(env)
 
     # specify directory for logging experiments
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg["runner"]["experiment_name"])
@@ -78,23 +78,24 @@ def main():
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
 
     # create runner from rsl-rl
-    ppo_runner = OnPolicyRunner(env, agent_cfg, log_dir=None, device=agent_cfg["device"])
+    ppo_runner = OnPolicyRunner(rslenv, agent_cfg, log_dir=None, device=agent_cfg["device"])
     ppo_runner.load(resume_path)
     # obtain the trained policy for inference
-    policy = ppo_runner.get_inference_policy(device=env.unwrapped.device)
+    policy = ppo_runner.get_inference_policy(device=rslenv.unwrapped.device)
 
     # export policy to onnx
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
     export_policy_as_onnx(ppo_runner.alg.actor_critic, export_model_dir, filename="policy.onnx")
 
     # reset environment
-    obs, _ = env.reset()
+    obs, _ = rslenv.reset()
     # simulate environment
     while simulation_app.is_running():
         # agent stepping
         actions = policy(obs)
         # env stepping
-        obs, priv_obs, rew, done, info = env.step(actions)
+        obs, priv_obs, rew, done, info = rslenv.step(actions)
+        print("#### elevator_state", env.elevator._sm_state)
         print(f"Reward: {rew}")
         # check if simulator is stopped
         if env.unwrapped.sim.is_stopped():
