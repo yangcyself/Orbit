@@ -82,6 +82,7 @@ class ObservationsCfg:
         elevator_state = {}
         elevator_waittime = {}
         elevator_is_zerofloor = {}
+        elevator_btn_pressed = {}
 
     @configclass
     class RGBCfg:
@@ -101,7 +102,7 @@ class ObservationsCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    penalizing_robot_dof_velocity_l2 = {"weight": -0.2}  # -1e-4
+    penalizing_robot_dof_velocity_l2 = {"weight": -0.3}  # -1e-4
     penalizing_robot_dof_acceleration_l2 = {"weight": -2e-5}
     # penalizing_action_rate_l2 = {"weight": -0.1}
     penalizing_action_l2 = {"weight": -0.5}
@@ -114,9 +115,9 @@ class RewardsCfg:
     tracking_reference_waitout = {"weight": 5., "sigma": 2.}
 
     penalizing_camera_lin_vel_l2 = {"weight": -0.5}
-    penalizing_camera_ang_vel_l2 = {"weight": -2.}
-    penalizing_nonflat_camera_l2 = {"weight": -2.}
-    look_at_moving_direction_exp = {"weight": -0.02, "sigma": 0.2}
+    penalizing_camera_ang_vel_l2 = {"weight": -1.}
+    penalizing_nonflat_camera_l2 = {"weight": -1.}
+    look_at_moving_direction_exp = {"weight": -0.02, "sigma": 0.1}
 
 
 @configclass

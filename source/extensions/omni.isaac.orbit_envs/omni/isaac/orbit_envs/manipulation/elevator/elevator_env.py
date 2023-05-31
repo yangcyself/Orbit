@@ -756,6 +756,11 @@ class ElevatorObservationManager(ObservationManager):
         """The waittime of the elevator"""
         return (env.elevator._sm_state[:,1,None].to(dtype = torch.int64, device = env.device) == 0).to(dtype = torch.float32, device = env.device)
 
+    def elevator_btn_pressed(self, env: ElevatorEnv):
+        """Whether the button is pressed"""
+        elevator_state = env.elevator._sm_state.to(env.device)
+        return (elevator_state[:,2,None]>0 | elevator_state[:,3,None]>0).to(dtype = torch.float32, device = env.device)
+
     def hand_camera_rgb(self, env: ElevatorEnv):
         """RGB camera observations.
         type uint8 and be stored in channel-last (H, W, C) format.
