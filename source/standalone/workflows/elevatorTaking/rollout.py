@@ -104,13 +104,16 @@ def main():
     # modify configuration
     # env_cfg.control.control_type = "inverse_kinematics"
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
-    env_cfg.env.episode_length_s = 6.0
+    env_cfg.env.episode_length_s = 10.0
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
     env_cfg.control.control_type = "default"
     env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
+    env_cfg.initialization.robot.position_cat = "default"
+    env_cfg.initialization.elevator.moving_elevator_prob = -1
+    env_cfg.initialization.elevator.nonzero_floor_prob = -1
 
     # create environment
     env = myEnvGym(args_cli.task, cfg= env_cfg, headless= args_cli.headless)
@@ -122,13 +125,14 @@ def main():
     log_dir = os.path.join(os.path.dirname(os.path.dirname(args_cli.checkpoints)),"logs")
     data_logger = DataLogger(log_dir, log_tb=True)
 
-    for f in glob(args_cli.checkpoints.replace("__e__", "*")):
-        m = re.search(args_cli.checkpoints.replace("__e__", "(\d+)"), f)
-        if not m:
-            continue
-        print("Loading checkpoint", f)
-        epoch = int(m.group(1))
+    allfiles = [
+        (int(re.search(args_cli.checkpoints.replace("__e__", "(\d+)"), f).group(1)), f)
+        for f in glob(args_cli.checkpoints.replace("__e__", "*"))    
+    ]
+    allfiles.sort()
 
+    for epoch, f in allfiles:
+        print("Loading checkpoint", f)
         # restore policy
         policy = RobomimicWrapper(f, device)
 
@@ -137,7 +141,7 @@ def main():
         # robomimic only cares about policy observations
         # print("Observation",{k: (v.shape, v.shape) for k, v in obs.items()})
         # simulate environment
-        num_episodes = 500
+        num_episodes = 100
         all_rollout_logs, video_paths = TrainUtils.rollout_with_stats(
             policy=policy,
             envs={"orbit": env},
@@ -160,7 +164,6 @@ def main():
                     data_logger.record(f"Rollout/{k}/{env_name}", v, epoch, log_stats=True)
 
     # close the simulator
-    env.close()
     simulation_app.close()
 
 
