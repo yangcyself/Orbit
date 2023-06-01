@@ -46,10 +46,17 @@ def main():
     # modify configuration
     # env_cfg.control.control_type = "inverse_kinematics"
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
+    env_cfg.env.episode_length_s = 10.0
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
+    env_cfg.control.control_type = "default"
+    env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
+    env_cfg.initialization.robot.position_cat = "default"
+    env_cfg.initialization.elevator.moving_elevator_prob = -1
+    env_cfg.initialization.elevator.nonzero_floor_prob = -1
+
 
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=args_cli.headless)
@@ -62,8 +69,8 @@ def main():
     # reset environment
     obs_dict = env.reset()
     # robomimic only cares about policy observations
-    obs = {k:v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
-    obs["hand_camera_rgb"] = obs["hand_camera_rgb"].permute(2, 0, 1)
+    obs = {f"{kk}:{k}":v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
+    obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
     print("Observation",{k: (v.shape, v.shape) for k, v in obs.items()})
     # simulate environment
     while simulation_app.is_running():
@@ -76,8 +83,8 @@ def main():
         if env.unwrapped.sim.is_stopped():
             break
         # robomimic only cares about policy observations
-        obs = {k:v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
-        obs["hand_camera_rgb"] = obs["hand_camera_rgb"].permute(2, 0, 1)
+        obs = {f"{kk}:{k}":v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
+        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
 
     # close the simulator
     env.close()
