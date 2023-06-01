@@ -65,7 +65,7 @@ ACTOR_CONFIGS = {
 
 # A simple configuration for rollout collection
 EXP_CONFIGS = {
-    "actor_type": "human",
+    "actor_type": "rslrl",
     "collect_demonstration": True,
     "wrapper_cfg": None,
     "collect_extra_info": True,
@@ -117,7 +117,8 @@ class RslRlActor(ActorWrapperBase):
 
     def get_action(self, obs):
         # convert obs to tensor
-        obs_rsl = dict_to_tensor(obs['policy'], ['dof_pos_normalized', 'dof_vel', 'ee_position', 'elevator_state', 'elevator_waittime'])
+        obs_rsl = dict_to_tensor(obs['policy'], ['dof_pos_normalized', 'dof_vel', 'ee_position', 'elevator_btn_pressed', 
+           'elevator_is_zerofloor', 'elevator_state', 'elevator_waittime'])
         with torch.no_grad():
             action = self.policy(obs_rsl)
             return action
@@ -165,9 +166,10 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     # modify configuration
+    env_cfg.env.episode_length_s = 30.
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
-    env_cfg.terminations.collision = False
+    env_cfg.terminations.collision = True
     env_cfg.observations.return_dict_obs_in_group = True
     env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
     EXP_CONFIGS["wrapper_cfg"] = ACTOR_CONFIGS[EXP_CONFIGS["actor_type"]]
