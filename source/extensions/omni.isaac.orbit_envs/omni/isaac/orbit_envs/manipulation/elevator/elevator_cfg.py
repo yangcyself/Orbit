@@ -106,7 +106,7 @@ class RewardsCfg:
     penalizing_robot_dof_velocity_l2 = {"weight": -0.2}  # -1e-4
     penalizing_robot_dof_acceleration_l2 = {"weight": -2e-5}
     # penalizing_action_rate_l2 = {"weight": -0.1}
-    penalizing_action_l2 = {"weight": -0.5}
+    penalizing_action_l2 = {"weight": -0.2}
     penalizing_collision = {"weight": -1.}
 
     tracking_reference_button_pos = {"weight": 5., "sigma": 2.}
@@ -116,7 +116,7 @@ class RewardsCfg:
     tracking_reference_waitout = {"weight": 6., "sigma": 2.}
 
     penalizing_camera_lin_vel_l2 = {"weight": -0.25}
-    penalizing_camera_ang_vel_l2 = {"weight": -0.5}
+    penalizing_camera_ang_vel_l2 = {"weight": -0.3} # Don't make it any larger
     penalizing_nonflat_camera_l2 = {"weight": -0.5}
     # look_at_moving_direction_exp = {"weight": -0.02, "sigma": 0.1}
 
