@@ -47,7 +47,7 @@ class InitializationCfg:
     @configclass
     class ElevatorStateCfg:
         moving_elevator_prob = 0.4
-        nonzero_floor_prob = 0.4
+        nonzero_floor_prob = 1.
         max_init_wait_time = 25.
         max_init_floor = 2
     # initialize
@@ -102,7 +102,8 @@ class ObservationsCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    penalizing_robot_dof_velocity_l2 = {"weight": -0.3}  # -1e-4
+    only_positive_rewards = True
+    penalizing_robot_dof_velocity_l2 = {"weight": -0.2}  # -1e-4
     penalizing_robot_dof_acceleration_l2 = {"weight": -2e-5}
     # penalizing_action_rate_l2 = {"weight": -0.1}
     penalizing_action_l2 = {"weight": -0.5}
@@ -110,14 +111,14 @@ class RewardsCfg:
 
     tracking_reference_button_pos = {"weight": 5., "sigma": 2.}
     tracking_reference_button_rot = {"weight": 3., "sigma": 0.1}
-    tracking_reference_enter = {"weight": 5., "sigma": 6}
-    tracking_reference_waitin = {"weight": 10., "sigma": 0.5}
-    tracking_reference_waitout = {"weight": 5., "sigma": 2.}
+    tracking_reference_enter = {"weight": 8., "sigma": 3}
+    tracking_reference_waitin = {"weight": 16., "sigma": 0.5}
+    tracking_reference_waitout = {"weight": 6., "sigma": 2.}
 
-    penalizing_camera_lin_vel_l2 = {"weight": -0.5}
-    penalizing_camera_ang_vel_l2 = {"weight": -1.}
-    penalizing_nonflat_camera_l2 = {"weight": -1.}
-    look_at_moving_direction_exp = {"weight": -0.02, "sigma": 0.1}
+    penalizing_camera_lin_vel_l2 = {"weight": -0.25}
+    penalizing_camera_ang_vel_l2 = {"weight": -0.5}
+    penalizing_nonflat_camera_l2 = {"weight": -0.5}
+    # look_at_moving_direction_exp = {"weight": -0.02, "sigma": 0.1}
 
 
 @configclass

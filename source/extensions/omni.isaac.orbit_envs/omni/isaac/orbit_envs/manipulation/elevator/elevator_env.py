@@ -67,9 +67,9 @@ class ElevatorSmState(Enum):
 class ElevatorSmWaitTime(Enum):
     """Additional wait times (in s) for states for before switching."""
 
-    DOOR_OPENING = wp.constant(25.0)
+    DOOR_OPENING = wp.constant(20.0)
     DOOR_CLOSING = wp.constant(3.0)
-    MOVE = wp.constant(25)
+    MOVE = wp.constant(25.0)
 
 
 @wp.func
@@ -489,7 +489,7 @@ class ElevatorEnv(IsaacEnv):
         self._randomize_elevator_initial_state(env_ids=env_ids)
 
         # --desire position
-        self.robot_des_pose_w[env_ids, 0:2] =  torch.tensor([[1.53,-2.08]], device = self.device)
+        self.robot_des_pose_w[env_ids, 0:3] =  torch.tensor([[1.53, -2.08, -1.61]], device = self.device)
 
         # -- Reward logging
         # fill extras with episode information
@@ -567,6 +567,12 @@ class ElevatorEnv(IsaacEnv):
             self.camera.update(dt=self.dt)
         # -- compute MDP signals
         # reward
+        self.reward_penalizing_factor = torch.ones(self.num_envs, device=self.device)
+        elevator_state = self.elevator._sm_state.to(self.device)
+        self.reward_penalizing_factor[elevator_state[:,0]==1] *= 2.
+        self.reward_penalizing_factor[elevator_state[:,0]==2] *= 2.
+        self.reward_penalizing_factor[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] *= 3.
+        self.reward_penalizing_factor[(elevator_state[:,0]==3) & (elevator_state[:,1]!=0) & ((elevator_state[:,2]>0) | (elevator_state[:,3]>0))] *= 2.
         self.reward_buf = self.reward_manager.compute()
         # terminations
         self._check_termination()
@@ -781,19 +787,23 @@ class ElevatorRewardManager(RewardManager):
 
     def penalizing_robot_dof_velocity_l2(self, env: ElevatorEnv):
         """Penalize large movements of the robot arm."""
-        return torch.sum(torch.square(env.robot.data.arm_dof_vel), dim=1)
+        reward = torch.sum(torch.square(env.robot.data.arm_dof_vel), dim=1)
+        return reward * env.reward_penalizing_factor
 
     def penalizing_robot_dof_acceleration_l2(self, env: ElevatorEnv):
         """Penalize fast movements of the robot arm."""
-        return torch.sum(torch.square(env.robot.data.dof_acc), dim=1)
+        reward = torch.sum(torch.square(env.robot.data.dof_acc), dim=1)
+        return reward * env.reward_penalizing_factor
 
     def penalizing_action_rate_l2(self, env: ElevatorEnv):
         """Penalize large variations in action commands."""
-        return torch.sum(torch.square(env.actions[:, :-1] - env.previous_actions[:, :-1]), dim=1)
+        reward = torch.sum(torch.square(env.actions[:, :-1] - env.previous_actions[:, :-1]), dim=1)
+        return reward * env.reward_penalizing_factor
 
     def penalizing_action_l2(self, env: ElevatorEnv):
         """Penalize large actions."""
-        return torch.sum(torch.square(env.actions[:, :-1]), dim=1)
+        reward = torch.sum(torch.square(env.actions[:, :-1]), dim=1)
+        return reward * env.reward_penalizing_factor
     
     def penalizing_collision(self, env:ElevatorEnv):
         """Penalize collision"""
@@ -802,18 +812,21 @@ class ElevatorRewardManager(RewardManager):
     def penalizing_camera_lin_vel_l2(self, env:ElevatorEnv):
         """Penalize camera movement"""
         lin_vel = env.robot.data.ee_state_w[:,7:10]
-        return torch.sum(torch.square(lin_vel), dim=1)
+        reward = torch.sum(torch.square(lin_vel), dim=1)
+        return reward * env.reward_penalizing_factor
 
     def penalizing_camera_ang_vel_l2(self, env:ElevatorEnv):
         """Penalize camera movement"""
         ang_vel = env.robot.data.ee_state_w[:,10:13]
-        return torch.sum(torch.square(ang_vel), dim=1)
+        reward = torch.sum(torch.square(ang_vel), dim=1)
+        return reward * env.reward_penalizing_factor
 
     def penalizing_nonflat_camera_l2(self, env:ElevatorEnv):
         axis_z = matrix_from_quat(env.robot.data.ee_state_w[:, 3:7])[:,2,:]
         w = torch.tensor([[0.5,0.,1.]], device = env.device)
         ref = torch.tensor([[1.,0.,0.]], device = env.device)
-        return torch.sum(torch.square(axis_z - ref) * w, dim=1)
+        reward = torch.sum(torch.square(axis_z - ref) * w, dim=1)
+        return reward * env.reward_penalizing_factor
 
     def look_at_moving_direction_exp(self, env:ElevatorEnv, sigma):
         """
@@ -839,7 +852,7 @@ class ElevatorRewardManager(RewardManager):
         reward[elevator_state[:,0]==1 ] = 1. # No reward gradient for button pushing when elevator is not at rest
         reward[(elevator_state[:,0]==2) ] = 0.
         reward[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] = 0.
-        reward[(elevator_state[:,0]==3) & ((elevator_state[:,2]>0) | (elevator_state[:,3]>0))] = 1.
+        reward[(elevator_state[:,0]==3) & (elevator_state[:,1]!=0) & ((elevator_state[:,2]>0) | (elevator_state[:,3]>0))] = 1.
         return reward
 
     def tracking_reference_button_rot(self, env: ElevatorEnv, sigma):
@@ -859,14 +872,14 @@ class ElevatorRewardManager(RewardManager):
         return reward
 
     def tracking_reference_enter(self, env: ElevatorEnv, sigma):        
-        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:2] - env.robot_des_pose_w[:,:2], dim=1)
+        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:3] - env.robot_des_pose_w[:,:3], dim=1)
         reward = torch.exp(-robot_pos_error / sigma)
         elevator_state = env.elevator._sm_state.to(env.device)
         reward[(elevator_state[:,0] != 1)] = 0.
         return reward
 
     def tracking_reference_waitin(self, env: ElevatorEnv, sigma):
-        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:2] - env.robot_des_pose_w[:,:2], dim=1)
+        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:3] - env.robot_des_pose_w[:,:3], dim=1)
         reward = torch.exp(-robot_pos_error / sigma)
         # no reward if the door is closed and robot is outside of the elevator
         elevator_state = env.elevator._sm_state.to(env.device)
