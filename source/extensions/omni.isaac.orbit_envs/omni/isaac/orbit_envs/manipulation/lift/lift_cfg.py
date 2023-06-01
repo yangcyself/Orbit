@@ -5,8 +5,8 @@
 
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematicsCfg
 from omni.isaac.orbit.objects import RigidObjectCfg
-from omni.isaac.orbit.robots.config.franka import FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
-from omni.isaac.orbit.robots.single_arm import SingleArmManipulatorCfg
+from omni.isaac.orbit.robots.config.ridgeback_franka import RIDGEBACK_FRANKA_PANDA_CFG
+from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulatorCfg
 from omni.isaac.orbit.utils import configclass
 from omni.isaac.orbit.utils.assets import ISAAC_NUCLEUS_DIR
 
@@ -15,14 +15,6 @@ from omni.isaac.orbit_envs.isaac_env_cfg import EnvCfg, IsaacEnvCfg, PhysxCfg, S
 ##
 # Scene settings
 ##
-
-
-@configclass
-class TableCfg:
-    """Properties for the table."""
-
-    # note: we use instanceable asset since it consumes less memory
-    usd_path = f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
 
 
 @configclass
@@ -219,11 +211,10 @@ class LiftEnvCfg(IsaacEnvCfg):
 
     # Scene Settings
     # -- robot
-    robot: SingleArmManipulatorCfg = FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
+    robot: MobileManipulatorCfg = RIDGEBACK_FRANKA_PANDA_CFG
     # -- object
     object: ManipulationObjectCfg = ManipulationObjectCfg()
-    # -- table
-    table: TableCfg = TableCfg()
+
     # -- visualization marker
     goal_marker: GoalMarkerCfg = GoalMarkerCfg()
     frame_marker: FrameMarkerCfg = FrameMarkerCfg()
