@@ -95,7 +95,13 @@ class myEnvGym(EnvGym):
         self._current_done = done
         return self.get_observation(obs), reward.detach().cpu().numpy(), self.is_done(), info
 
-
+    def is_success(self):
+        """
+        Check if the task condition(s) is reached. Should return a dictionary
+        { str: bool } with at least a "task" key for the overall task success,
+        and additional optional keys corresponding to other task criteria.
+        """
+        return {"task": self.env.is_success()["task"].cpu().numpy()}
     
 def main():
     """Run a trained policy from robomimic with Isaac Orbit environment."""

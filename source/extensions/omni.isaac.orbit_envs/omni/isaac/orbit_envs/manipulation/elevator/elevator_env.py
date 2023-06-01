@@ -731,6 +731,18 @@ class ElevatorEnv(IsaacEnv):
         self.elevator._sm.sm_state[env_ids[nonzeroFloorFlag], 1] = torch.randint(1, self.cfg.initialization.elevator.max_init_floor,
             (nonzeroFloorFlag.sum(),), device = "cuda", dtype = torch.int32)
 
+
+    def is_success(self):
+        """ Required by robomimic
+        Check if the task condition(s) is reached. Should return a dictionary
+        { str: bool } with at least a "task" key for the overall task success,
+        and additional optional keys corresponding to other task criteria.
+        """
+        robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
+        return {"task": 
+                torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0)
+            }
+
 class ElevatorObservationManager(ObservationManager):
     """Reward manager for single-arm reaching environment."""
 
