@@ -14,7 +14,7 @@ import omni.isaac.orbit.utils.kit as kit_utils
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematics
 from omni.isaac.orbit.markers import StaticMarker
 from omni.isaac.orbit.objects import RigidObject
-from omni.isaac.orbit.robots.single_arm import SingleArmManipulator
+from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
 from omni.isaac.orbit.utils.dict import class_to_dict
 from omni.isaac.orbit.utils.math import quat_inv, quat_mul, random_orientation, sample_uniform, scale_transform
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
@@ -25,7 +25,7 @@ from .lift_cfg import LiftEnvCfg, RandomizationCfg
 
 
 class LiftEnv(IsaacEnv):
-    """Environment for lifting an object off a table with a single-arm manipulator."""
+    """Environment for lifting an object with a mobile manipulator."""
 
     def __init__(self, cfg: LiftEnvCfg = None, **kwargs):
         # copy configuration
@@ -34,7 +34,7 @@ class LiftEnv(IsaacEnv):
         # note: controller decides the robot control mode
         self._pre_process_cfg()
         # create classes (these are called by the function :meth:`_design_scene`)
-        self.robot = SingleArmManipulator(cfg=self.cfg.robot)
+        self.robot = MobileManipulator(cfg=self.cfg.robot)
         self.object = RigidObject(cfg=self.cfg.object)
 
         # initialize the base class to setup the scene.
@@ -75,8 +75,6 @@ class LiftEnv(IsaacEnv):
     def _design_scene(self) -> List[str]:
         # ground plane
         kit_utils.create_ground_plane("/World/defaultGroundPlane", z_position=-1.05)
-        # table
-        prim_utils.create_prim(self.template_env_ns + "/Table", usd_path=self.cfg.table.usd_path)
         # robot
         self.robot.spawn(self.template_env_ns + "/Robot")
         # object
@@ -144,15 +142,20 @@ class LiftEnv(IsaacEnv):
             # set the controller commands
             self._ik_controller.set_command(self.actions[:, :-1])
             # use IK to convert to joint-space commands
-            self.robot_actions[:, : self.robot.arm_num_dof] = self._ik_controller.compute(
+            self.robot_actions[
+                :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
+            ] = self._ik_controller.compute(
                 self.robot.data.ee_state_w[:, 0:3] - self.envs_positions,
                 self.robot.data.ee_state_w[:, 3:7],
                 self.robot.data.ee_jacobian,
                 self.robot.data.arm_dof_pos,
             )
             # offset actuator command with position offsets
-            dof_pos_offset = self.robot.data.actuator_pos_offset
-            self.robot_actions[:, : self.robot.arm_num_dof] -= dof_pos_offset[:, : self.robot.arm_num_dof]
+            self.robot_actions[
+                :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
+            ] -= self.robot.data.actuator_pos_offset[
+                :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
+            ]
             # we assume last command is tool action so don't change that
             self.robot_actions[:, -1] = self.actions[:, -1]
         elif self.cfg.control.control_type == "default":
@@ -183,7 +186,7 @@ class LiftEnv(IsaacEnv):
         self.extras["time_outs"] = self.episode_length_buf >= self.max_episode_length
         # -- add information to extra if task completed
         object_position_error = torch.norm(self.object.data.root_pos_w - self.object_des_pose_w[:, 0:3], dim=1)
-        self.extras["is_success"] = torch.where(object_position_error < 0.02, 1, self.reset_buf)
+        self.extras["is_success"] = torch.where(object_position_error < 0.02, 1, 0)
         # -- update USD visualization
         if self.cfg.viewer.debug_vis and self.enable_render:
             self._debug_vis()
@@ -288,9 +291,6 @@ class LiftEnv(IsaacEnv):
         if self.cfg.terminations.is_success:
             object_position_error = torch.norm(self.object.data.root_pos_w - self.object_des_pose_w[:, 0:3], dim=1)
             self.reset_buf = torch.where(object_position_error < 0.02, 1, self.reset_buf)
-        # -- object fell off the table (table at height: 0.0 m)
-        if self.cfg.terminations.object_falling:
-            self.reset_buf = torch.where(object_pos[:, 2] < -0.05, 1, self.reset_buf)
         # -- episode length
         if self.cfg.terminations.episode_timeout:
             self.reset_buf = torch.where(self.episode_length_buf >= self.max_episode_length, 1, self.reset_buf)
@@ -363,9 +363,9 @@ class LiftObservationManager(ObservationManager):
     def arm_dof_pos_scaled(self, env: LiftEnv):
         """DOF positions for the arm normalized to its max and min ranges."""
         return scale_transform(
-            env.robot.data.arm_dof_pos,
-            env.robot.data.soft_dof_pos_limits[:, : env.robot.arm_num_dof, 0],
-            env.robot.data.soft_dof_pos_limits[:, : env.robot.arm_num_dof, 1],
+            env.robot.data.dof_pos,
+            env.robot.data.soft_dof_pos_limits[:, :, 0],
+            env.robot.data.soft_dof_pos_limits[:, :, 1],
         )
 
     def arm_dof_vel(self, env: LiftEnv):
@@ -375,9 +375,9 @@ class LiftObservationManager(ObservationManager):
     def tool_dof_pos_scaled(self, env: LiftEnv):
         """DOF positions of the tool normalized to its max and min ranges."""
         return scale_transform(
-            env.robot.data.tool_dof_pos,
-            env.robot.data.soft_dof_pos_limits[:, env.robot.arm_num_dof :, 0],
-            env.robot.data.soft_dof_pos_limits[:, env.robot.arm_num_dof :, 1],
+            env.robot.data.dof_pos,
+            env.robot.data.soft_dof_pos_limits[:, :, 0],
+            env.robot.data.soft_dof_pos_limits[:, :, 1],
         )
 
     def tool_positions(self, env: LiftEnv):
