@@ -809,12 +809,12 @@ class ElevatorRewardManager(RewardManager):
 
     def penalizing_action_rate_l2(self, env: ElevatorEnv):
         """Penalize large variations in action commands."""
-        reward = torch.sum(torch.square(env.actions[:, :-1] - env.previous_actions[:, :-1]), dim=1)
+        reward = torch.sum(torch.square(env.actions[:, :] - env.previous_actions[:, :]), dim=1)
         return reward * env.reward_penalizing_factor
 
     def penalizing_action_l2(self, env: ElevatorEnv):
         """Penalize large actions."""
-        reward = torch.sum(torch.square(env.actions[:, :-1]), dim=1)
+        reward = torch.sum(torch.square(env.actions[:, :]), dim=1)
         return reward * env.reward_penalizing_factor
     
     def penalizing_collision(self, env:ElevatorEnv):
