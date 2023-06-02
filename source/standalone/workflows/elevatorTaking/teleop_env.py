@@ -75,7 +75,7 @@ def main():
         env_cfg.initialization.elevator.moving_elevator_prob = -1
         env_cfg.initialization.elevator.nonzero_floor_prob = -1
         env_cfg.initialization.elevator.max_init_wait_time = 0
-        env_cfg.initialization.elevator.max_init_floor = 2
+        env_cfg.initialization.elevator.max_init_floor = 20
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=args_cli.headless)
     # check environment name (for reach , we don't allow the gripper)

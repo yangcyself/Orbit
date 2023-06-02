@@ -49,7 +49,7 @@ class InitializationCfg:
         moving_elevator_prob = 0.4
         nonzero_floor_prob = 1.
         max_init_wait_time = 25.
-        max_init_floor = 2
+        max_init_floor = 20
     # initialize
     robot: RobotPosCfg = RobotPosCfg()
     elevator: ElevatorStateCfg = ElevatorStateCfg()

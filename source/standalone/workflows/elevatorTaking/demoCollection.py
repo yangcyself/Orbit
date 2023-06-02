@@ -22,6 +22,7 @@ parser.add_argument("--num_demos", type=int, default=1, help="Number of episodes
 parser.add_argument("--filename", type=str, default="hdf_dataset", help="Basename of output file.")
 parser.add_argument("--sensitivity", type=float, default=1.0, help="Sensitivity factor.")
 parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
+parser.add_argument("--prefix", type=str, default=".", help="Save dataset to <prefix>/logs/rolloutCollection.")
 parser.add_argument("--notCollectDemonstration", action="store_true", default=False, help="Do not collect demonstration.")
 args_cli = parser.parse_args()
 args_cli.task = "Isaac-Elevator-Franka-v0"
@@ -166,7 +167,8 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     # modify configuration
-    env_cfg.env.episode_length_s = 30.
+    env_cfg.env.episode_length_s = 20.
+    env_cfg.initialization.elevator.max_init_floor = 5 # wait for at most 5 seconds
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = True
@@ -198,7 +200,7 @@ def main():
     
     # specify directory for logging experiments
     log_dir = datetime.now().strftime("%b%d_%H-%M-%S")
-    log_dir = os.path.join("./logs/rolloutCollection", args_cli.task, log_dir)
+    log_dir = os.path.join(args_cli.prefix, "logs/rolloutCollection", args_cli.task, log_dir)
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_pickle(os.path.join(log_dir, "params", "env.pkl"), env_cfg)

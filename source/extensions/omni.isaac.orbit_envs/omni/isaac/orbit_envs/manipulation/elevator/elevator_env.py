@@ -116,7 +116,7 @@ def infer_state_machine(
 
         if floor != 0:
             sm_state[tid, 0] = ElevatorSmState.MOVE.value
-            sm_wait_time[tid] = ElevatorSmWaitTime.MOVE.value - 5.0 - 10.0 * float(floor)
+            sm_wait_time[tid] = ElevatorSmWaitTime.MOVE.value - 1.0 - 1.0 * float(floor)
 
     elif state == ElevatorSmState.DOOR_OPENING.value:
         door_state[tid] = DoorState.OPEN.value
