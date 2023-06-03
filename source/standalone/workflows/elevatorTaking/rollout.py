@@ -29,18 +29,21 @@ simulation_app = SimulationApp(config)
 
 import gym
 import torch
+from datetime import datetime
 
 import robomimic  # noqa: F401
 import robomimic.utils.file_utils as FileUtils
 import robomimic.utils.torch_utils as TorchUtils
 import robomimic.utils.train_utils as TrainUtils
+from robomimic.utils.log_utils import DataLogger
+
 from robomimic.algo import RolloutPolicy
 from robomimic.envs.env_gym import EnvGym
 
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
-from robomimic.utils.log_utils import DataLogger
+from omni.isaac.orbit.utils.io import dump_pickle, dump_yaml
 from glob import glob
 import re
 import os
@@ -110,25 +113,29 @@ def main():
     # modify configuration
     # env_cfg.control.control_type = "inverse_kinematics"
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
-    env_cfg.env.episode_length_s = 10.0
+    env_cfg.env.episode_length_s = 30.0
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
-    env_cfg.control.control_type = "default"
+    env_cfg.control.control_type = "ohneHand"
     env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
-    env_cfg.initialization.robot.position_cat = "default"
-    env_cfg.initialization.elevator.moving_elevator_prob = -1
-    env_cfg.initialization.elevator.nonzero_floor_prob = -1
+    env_cfg.initialization.robot.position_cat = "uniform"
+    env_cfg.initialization.elevator.moving_elevator_prob = 0.4
+    env_cfg.initialization.elevator.nonzero_floor_prob = 1
 
     # create environment
     env = myEnvGym(args_cli.task, cfg= env_cfg, headless= args_cli.headless)
     
-
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
 
-    log_dir = os.path.join(os.path.dirname(os.path.dirname(args_cli.checkpoints)),"logs")
+    log_dir = datetime.now().strftime("%b%d_%H-%M-%S")
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(args_cli.checkpoints)),"logs", "rollout", log_dir)
+    # dump the configuration into log-directory
+    dump_yaml(os.path.join(log_dir, "env.yaml"), env_cfg)
+    dump_pickle(os.path.join(log_dir, "env.pkl"), env_cfg)
+
     data_logger = DataLogger(log_dir, log_tb=True)
 
     allfiles = [
@@ -168,6 +175,10 @@ def main():
                     data_logger.record(f"Timing_Stats/Rollout_{env_name}_{k[5:]}", v, epoch)
                 else:
                     data_logger.record(f"Rollout/{k}/{env_name}", v, epoch, log_stats=True)
+        
+        with open(os.path.join(log_dir, 'rollout_log.txt'), 'a') as logf:
+            stamp = datetime.now().strftime("%b%d_%H-%M-%S")
+            logf.write(f"{epoch}: {stamp}\n")
 
     # close the simulator
     simulation_app.close()

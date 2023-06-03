@@ -5,7 +5,7 @@ device: 'cuda:0'
 
 policy:
   init_noise_std: 1.0
-  actor_hidden_dims: [512, 256, 256]
+  actor_hidden_dims: [512, 256, 256]  # cannot make smaller
   critic_hidden_dims: [512, 256, 256]
   activation: "elu"  # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
