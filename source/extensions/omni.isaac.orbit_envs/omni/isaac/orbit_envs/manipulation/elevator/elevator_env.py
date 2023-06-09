@@ -389,6 +389,9 @@ class ElevatorEnv(IsaacEnv):
         # initialize views for the cloned scenes
         self._initialize_views()
 
+        # An array to record if the robot has pushed the button in the episode
+        self._hasdone_pushbtn = torch.zeros((self.num_envs, 1), dtype = bool, device=self.device)
+
         assert (self.num_envs == 1 or self.camera is None), "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
 
         # prepare the observation manager
@@ -504,6 +507,9 @@ class ElevatorEnv(IsaacEnv):
         # -- MDP reset
         self.reset_buf[env_ids] = 0
         self.episode_length_buf[env_ids] = 0
+        # -- Success reset
+        self._hasdone_pushbtn[env_ids] = False
+
         # controller reset
         if self.cfg.control.control_type == "inverse_kinematics":
             self._ik_controller.reset_idx(env_ids)
@@ -584,6 +590,8 @@ class ElevatorEnv(IsaacEnv):
         self.extras["time_outs"] = self.episode_length_buf >= self.max_episode_length
         robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
         self.extras["is_success"] = torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0)
+        self._hasdone_pushbtn = torch.where(elevator_state[:,2]>0, True, self._hasdone_pushbtn)
+        self._hasdone_pushbtn = torch.where(elevator_state[:,3]>0, True, self._hasdone_pushbtn)
         # -- update USD visualization
         if self.cfg.viewer.debug_vis and self.enable_render:
             self._debug_vis()
@@ -740,7 +748,8 @@ class ElevatorEnv(IsaacEnv):
         """
         robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
         return {"task": 
-                torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0)
+                torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0),
+                "pushed_btn": torch.where(self._hasdone_pushbtn, 1, 0),
             }
 
 class ElevatorObservationManager(ObservationManager):

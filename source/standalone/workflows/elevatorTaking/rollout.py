@@ -104,7 +104,10 @@ class myEnvGym(EnvGym):
         { str: bool } with at least a "task" key for the overall task success,
         and additional optional keys corresponding to other task criteria.
         """
-        return {"task": self.env.is_success()["task"].cpu().numpy()}
+        return {
+            "task": self.env.is_success()["task"].cpu().numpy(),
+            "pushed_btn": self.env.is_success()["pushed_btn"].cpu().numpy()
+        }
     
 def main():
     """Run a trained policy from robomimic with Isaac Orbit environment."""
