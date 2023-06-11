@@ -51,11 +51,11 @@ def main():
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
-    env_cfg.control.control_type = "default"
+    env_cfg.control.control_type = "ohneHand"
     env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
-    env_cfg.initialization.robot.position_cat = "default"
+    env_cfg.initialization.robot.position_cat = "uniform"
     env_cfg.initialization.elevator.moving_elevator_prob = -1
-    env_cfg.initialization.elevator.nonzero_floor_prob = -1
+    env_cfg.initialization.elevator.nonzero_floor_prob = 1
 
 
     # create environment
@@ -68,6 +68,7 @@ def main():
 
     # reset environment
     obs_dict = env.reset()
+    policy.start_episode()
     # robomimic only cares about policy observations
     obs = {f"{kk}:{k}":v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
     obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
@@ -78,14 +79,15 @@ def main():
         actions = policy(obs)
         actions = torch.from_numpy(actions).to(device=device).view(1, env.action_space.shape[0])
         # apply actions
-        obs_dict, _, _, _ = env.step(actions)
+        obs_dict, _, done, info = env.step(actions)
         # check if simulator is stopped
         if env.unwrapped.sim.is_stopped():
             break
         # robomimic only cares about policy observations
         obs = {f"{kk}:{k}":v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
         obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
-
+        if done.any():
+            policy.start_episode()
     # close the simulator
     env.close()
     simulation_app.close()
