@@ -3,10 +3,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Script to run a trained policy from robomimic."""
+"""Script to rollout a directory of policies from robomimic, store them with tensorboard"""
+
 
 """Launch Isaac Sim Simulator first."""
-
 
 import argparse
 
@@ -48,68 +48,11 @@ from omni.isaac.orbit.utils.io import dump_pickle, dump_yaml, load_pickle, load_
 from glob import glob
 import re
 import os
+import sys
 
+sys.path.append(os.path.dirname(__file__))
+from utils.mimic_utils import RobomimicWrapper, myEnvGym
 
-
-class RobomimicWrapper(RolloutPolicy):
-    """The Wrapper of the RolloffPolicy
-    """
-    def __init__(self, checkpoint, device):
-        self.device = device
-        self.policy, _ = FileUtils.policy_from_checkpoint(ckpt_path=checkpoint, device=device, verbose=True)
-
-    def start_episode(self):
-        self.policy.start_episode()
-    
-    def _prepare_observation(self, ob):
-        self.policy._prepare_observation(ob)
-
-    def __call__(self, ob, goal=None):
-        obs = {f"{kk}:{k}":v[0] for kk,vv in ob.items() for k,v in vv.items()}
-        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
-        return torch.tensor(self.policy(obs)).to(self.device)[None,...]
-
-class myEnvGym(EnvGym):
-    def get_observation(self, obs=None):
-        """
-        Get current environment observation dictionary.
-
-        Args:
-            ob (np.array): current flat observation vector to wrap and provide as a dictionary.
-                If not provided, uses self._current_obs.
-        """
-        return obs
-    
-    def step(self, action):
-        """
-        Step in the environment with an action.
-
-        Args:
-            action (np.array): action to take
-
-        Returns:
-            observation (dict): new observation dictionary
-            reward (float): reward for this step
-            done (bool): whether the task is done
-            info (dict): extra information
-        """
-        obs, reward, done, info = self.env.step(action)
-        self._current_obs = obs
-        self._current_reward = reward
-        self._current_done = done
-        return self.get_observation(obs), reward.detach().cpu().numpy(), self.is_done(), info
-
-    def is_success(self):
-        """
-        Check if the task condition(s) is reached. Should return a dictionary
-        { str: bool } with at least a "task" key for the overall task success,
-        and additional optional keys corresponding to other task criteria.
-        """
-        return {
-            "task": self.env.is_success()["task"].cpu().numpy(),
-            "pushed_btn": self.env.is_success()["pushed_btn"].cpu().numpy()
-        }
-    
 # Define a function to parse a single line of the log file
 def parse_log_line(line):
     # Split the line into epoch and timestamp using the colon and space as the separator

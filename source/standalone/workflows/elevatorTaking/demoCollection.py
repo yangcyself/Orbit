@@ -70,7 +70,8 @@ EXP_CONFIGS = {
     "collect_demonstration": True,
     "wrapper_cfg": None,
     "collect_extra_info": True,
-    "num_demos": args_cli.num_demos
+    "num_demos": args_cli.num_demos,
+    "apply_action_noise": 0.1 # the noise to be applied on action, in order to generate diverse trajectory
 }
 
 
@@ -167,7 +168,7 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     # modify configuration
-    env_cfg.env.episode_length_s = 20.
+    env_cfg.env.episode_length_s = 5.
     env_cfg.initialization.elevator.max_init_floor = 5 # wait for at most 5 seconds
     env_cfg.initialization.elevator.moving_elevator_prob = 0 # wait for at most 5 seconds
     env_cfg.initialization.elevator.nonzero_floor_prob = 1 # wait for at most 5 seconds
@@ -239,6 +240,9 @@ def main():
             # -- obs
             for key, value in obs_mimic.items():
                 collector_interface.add(f"obs/{key}", value)
+                
+            if(EXP_CONFIGS["apply_action_noise"] is not None and EXP_CONFIGS["apply_action_noise"]):
+                actions += EXP_CONFIGS["apply_action_noise"] * torch.randn_like(actions)
 
             # -- actions
             collector_interface.add("actions", actions)

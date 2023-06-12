@@ -19,8 +19,6 @@ Args:
 
     use-actions (bool): if flag is provided, use open-loop action playback 
         instead of loading sim states
-
-    render (bool): if flag is provided, use on-screen rendering during playback
     
     video_path (str): if provided, render trajectories to this video file path
 
@@ -55,7 +53,12 @@ Example usage below:
         --video_path /tmp/dataset_task_inits.mp4
 """
 
+from omni.isaac.kit import SimulationApp
+config = {"headless": False}
+simulation_app = SimulationApp(config)
+
 import os
+import sys
 import json
 import h5py
 import argparse
@@ -67,18 +70,16 @@ import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.file_utils as FileUtils
 from robomimic.envs.env_base import EnvBase, EnvType
+import time
 
-
-import argparse
-from omni.isaac.kit import SimulationApp
-config = {"headless": False}
-simulation_app = SimulationApp(config)
 import gym
 import torch
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
 
+sys.path.append(os.path.dirname(__file__))
+from utils.mimic_utils import RobomimicWrapper, myEnvGym
 
 
 # Define default cameras to use for each env type
@@ -91,10 +92,8 @@ DEFAULT_CAMERAS = {
 
 def playback_trajectory_with_env(
     env, 
-    initial_state, 
     states, 
     actions=None, 
-    render=False, 
     video_writer=None, 
     video_skip=5, 
     camera_names=None,
@@ -107,26 +106,21 @@ def playback_trajectory_with_env(
 
     Args:
         env (instance of EnvBase): environment
-        initial_state (dict): initial simulation state to load
         states (np.array): array of simulation states to load
         actions (np.array): if provided, play actions back open-loop instead of using @states
-        render (bool): if True, render on-screen
         video_writer (imageio writer): video writer
         video_skip (int): determines rate at which environment frames are written to video
         camera_names (list): determines which camera(s) are used for rendering. Pass more than
             one to output a video with multiple camera views concatenated horizontally.
         first (bool): if True, only use the first frame of each episode.
     """
-    # assert isinstance(env, EnvBase)
 
     write_video = (video_writer is not None)
     video_count = 0
-    assert not (render and write_video)
 
     # load the initial state
     env.reset()
-    print("resetting to initial state", initial_state)
-    env.reset_to(torch.tensor(initial_state["states"]).unsqueeze(0))
+    env.reset_to(torch.tensor(states[0]).unsqueeze(0))
 
     traj_len = states.shape[0]
     action_playback = (actions is not None)
@@ -136,29 +130,19 @@ def playback_trajectory_with_env(
     for i in range(traj_len):
         print("playback traj step {}".format(i))
         if action_playback:
-            env.step(actions[i])
+            env.step(torch.tensor(actions[i]).unsqueeze(0))
             if i < traj_len - 1:
                 # check whether the actions deterministically lead to the same recorded states
                 state_playback = env.get_state()
-                if not np.all(np.equal(states[i + 1], state_playback)):
-                    err = np.linalg.norm(states[i + 1] - state_playback)
+                # print("states[i+1]", states[i+1])
+                # print("state_playback",state_playback)
+                err = torch.norm(torch.tensor(states[i + 1]) - state_playback.squeeze(0))
+                if err > 1e-3:
                     print("warning: playback diverged by {} at step {}".format(err, i))
         else:
+            raise ValueError("Must playback with action, add `--use-actions` in the cmd")
             env.reset_to(torch.tensor(states[i]).unsqueeze(0))
 
-        # on-screen render
-        if render:
-            env.render(mode="human", camera_name=camera_names[0])
-
-        # video render
-        if write_video:
-            if video_count % video_skip == 0:
-                video_img = []
-                for cam_name in camera_names:
-                    video_img.append(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name))
-                video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
-                video_writer.append_data(video_img)
-            video_count += 1
 
         if first:
             break
@@ -202,7 +186,6 @@ def playback_trajectory_with_obs(
 def playback_dataset(args):
     # some arg checking
     write_video = (args.video_path is not None)
-    assert not (args.render and write_video) # either on-screen or video but not both
 
     # Auto-fill camera rendering info if not specified
     if args.render_image_names is None:
@@ -210,10 +193,6 @@ def playback_dataset(args):
         env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
         env_type = EnvUtils.get_env_type(env_meta=env_meta)
         args.render_image_names = DEFAULT_CAMERAS[env_type]
-
-    if args.render:
-        # on-screen rendering can only support one camera
-        assert len(args.render_image_names) == 1
 
     if args.use_obs:
         assert write_video, "playback with observations can only write to video"
@@ -250,8 +229,6 @@ def playback_dataset(args):
 
         env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
         print("env_made!!")
-        # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
-        is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
 
     f = h5py.File(args.dataset, "r")
 
@@ -289,9 +266,6 @@ def playback_dataset(args):
 
         # prepare initial state to reload from
         states = f["data/{}/states".format(ep)][()]
-        initial_state = dict(states=states[0])
-        if is_robosuite_env:
-            initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
 
         # supply actions if using open-loop action playback
         actions = None
@@ -300,9 +274,7 @@ def playback_dataset(args):
 
         playback_trajectory_with_env(
             env=env, 
-            initial_state=initial_state, 
             states=states, actions=actions, 
-            render=args.render, 
             video_writer=video_writer, 
             video_skip=args.video_skip,
             camera_names=args.render_image_names,
@@ -353,13 +325,6 @@ if __name__ == "__main__":
         "--use-actions",
         action='store_true',
         help="use open-loop action playback instead of loading sim states",
-    )
-
-    # Whether to render playback to screen
-    parser.add_argument(
-        "--render",
-        action='store_true',
-        help="on-screen rendering",
     )
 
     # Dump a video of the dataset playback to the specified path

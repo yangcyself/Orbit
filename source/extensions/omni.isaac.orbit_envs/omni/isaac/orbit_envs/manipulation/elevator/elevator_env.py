@@ -330,6 +330,7 @@ class Elevator:
             return
         self._sm.reset_idx(env_ids)
         self.articulations.set_joint_positions(torch.zeros((len(env_ids), 4),device = self.device), env_ids, self._dof_index_door)
+        self.articulations.set_joint_positions(torch.full((len(env_ids), len(self._dof_index_btn)),1e-3,device = self.device), env_ids, self._dof_index_btn)
 
     def update_buffers(self, dt: float):
         self._dof_pos[:] = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
