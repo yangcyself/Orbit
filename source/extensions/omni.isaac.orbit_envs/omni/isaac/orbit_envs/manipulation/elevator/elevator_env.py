@@ -631,7 +631,7 @@ class ElevatorEnv(IsaacEnv):
         state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_vel.shape[1])
         assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
         self.elevator._sm_state = state[:, state_should_dims[0]:state_should_dims[1]].to(self.elevator._sm_state)
-        self.elevator._sm.sm_wait_time = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._sm.sm_wait_time)
+        self.elevator._sm.sm_wait_time = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._sm.sm_wait_time).squeeze(1)
         self.robot.data.dof_pos = state[:, state_should_dims[2]:state_should_dims[3]].to(self.robot.data.dof_pos)
         self.robot.data.dof_vel = state[:, state_should_dims[3]:state_should_dims[4]].to(self.robot.data.dof_vel)
 
