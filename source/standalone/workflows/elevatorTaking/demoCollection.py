@@ -169,8 +169,13 @@ def main():
     # modify configuration
     env_cfg.env.episode_length_s = 20.
     env_cfg.initialization.elevator.max_init_floor = 5 # wait for at most 5 seconds
+    env_cfg.initialization.elevator.moving_elevator_prob = 0 # wait for at most 5 seconds
+    env_cfg.initialization.elevator.nonzero_floor_prob = 1 # wait for at most 5 seconds
+    env_cfg.initialization.robot.position_uniform_min = [1.4, 0.9, -1.6]  # position (x,y,z)
+    env_cfg.initialization.robot.position_uniform_max = [1.6, 1.1, -1.4]  # position (x,y,z)
+    
     env_cfg.terminations.episode_timeout = True
-    env_cfg.terminations.is_success = True
+    env_cfg.terminations.is_success = "pushed_btn"
     env_cfg.terminations.collision = True
     env_cfg.observations.return_dict_obs_in_group = True
     env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
@@ -252,6 +257,8 @@ def main():
             collector_interface.add("rewards", rewards)
             # -- dones
             collector_interface.add("dones", dones)
+            # -- states
+            collector_interface.add("states", env.get_state().cpu().numpy())
             # -- is-success label
             try:
                 success = info["is_success"]

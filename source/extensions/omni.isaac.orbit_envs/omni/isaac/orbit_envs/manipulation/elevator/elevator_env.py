@@ -390,7 +390,7 @@ class ElevatorEnv(IsaacEnv):
         self._initialize_views()
 
         # An array to record if the robot has pushed the button in the episode
-        self._hasdone_pushbtn = torch.zeros((self.num_envs, 1), dtype = bool, device=self.device)
+        self._hasdone_pushbtn = torch.zeros((self.num_envs, ), dtype = bool, device=self.device)
 
         assert (self.num_envs == 1 or self.camera is None), "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
 
@@ -589,7 +589,7 @@ class ElevatorEnv(IsaacEnv):
         # Note: this is used by algorithms like PPO where time-outs are handled differently
         self.extras["time_outs"] = self.episode_length_buf >= self.max_episode_length
         robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
-        self.extras["is_success"] = torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0)
+        self.extras["is_success"] = self.is_success()["task"]
         self._hasdone_pushbtn = torch.where(elevator_state[:,2]>0, True, self._hasdone_pushbtn)
         self._hasdone_pushbtn = torch.where(elevator_state[:,3]>0, True, self._hasdone_pushbtn)
         # -- update USD visualization
@@ -610,6 +610,31 @@ class ElevatorEnv(IsaacEnv):
             else:
                 obs_dict[k] = obs[k]
         return obs_dict
+
+    def get_state(self):
+        # Return the underlying state of a simulated environment. Should be compatible with reset_to.
+
+        elevator_state = self.elevator._sm_state.to(self.device)
+        elevator_wait_time = self.elevator._sm.sm_wait_time.to(self.device).unsqueeze(1)
+        robot_dofpos = self.robot.data.dof_pos.to(self.device) 
+        robot_dofvel = self.robot.data.dof_vel.to(self.device) 
+        return torch.cat([elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel], dim=1)
+
+    def reset_to(self, state):
+        # Reset the simulated environment to a given state. Useful for reproducing results
+        # state: N x D tensor, where N is the number of environments and D is the dimension of the state
+        
+        state_should_dims = [0]
+        state_should_dims.append(state_should_dims[-1] + self.elevator._sm_state.shape[1])
+        state_should_dims.append(state_should_dims[-1] + self.elevator._sm.sm_wait_time.shape[0])
+        state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_pos.shape[1])
+        state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_vel.shape[1])
+        assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
+        self.elevator._sm_state = state[:, state_should_dims[0]:state_should_dims[1]].to(self.elevator._sm_state)
+        self.elevator._sm.sm_wait_time = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._sm.sm_wait_time)
+        self.robot.data.dof_pos = state[:, state_should_dims[2]:state_should_dims[3]].to(self.robot.data.dof_pos)
+        self.robot.data.dof_vel = state[:, state_should_dims[3]:state_should_dims[4]].to(self.robot.data.dof_vel)
+
 
     """
     Helper functions - Scene handling.
@@ -709,8 +734,7 @@ class ElevatorEnv(IsaacEnv):
         self.reset_buf[:] = 0
         # -- episode length
         if self.cfg.terminations.is_success:
-            robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
-            self.reset_buf = torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, self.reset_buf)
+            self.reset_buf = torch.where(self.is_success()["task"].to(dtype = bool), 1, self.reset_buf)
         if self.cfg.terminations.episode_timeout:
             self.reset_buf = torch.where(self.episode_length_buf >= self.max_episode_length, 1, self.reset_buf)
         if self.cfg.terminations.collision:
@@ -747,10 +771,14 @@ class ElevatorEnv(IsaacEnv):
         and additional optional keys corresponding to other task criteria.
         """
         robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
-        return {"task": 
-                torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0),
-                "pushed_btn": torch.where(self._hasdone_pushbtn, 1, 0),
-            }
+        success_dict = {"enter_elevator": torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0),    
+                    "pushed_btn": torch.where(self._hasdone_pushbtn, 1, 0)
+                }
+        if type(self.cfg.terminations.is_success) == str:
+            success_dict["task"] = success_dict[self.cfg.terminations.is_success]
+        else:
+            success_dict["task"] = success_dict["enter_elevator"]
+        return success_dict
 
 class ElevatorObservationManager(ObservationManager):
     """Reward manager for single-arm reaching environment."""

@@ -126,7 +126,7 @@ class TerminationsCfg:
     """Termination terms for the MDP."""
 
     episode_timeout = True  # reset when episode length ended
-    is_success = True  # reset when robot is in elevator
+    is_success = "enter_elevator"  # reset when robot is in elevator
     is_success_threshold = 0.5  # distance to elevator center
     collision = True  # reset when robot collides with the elevator
 
