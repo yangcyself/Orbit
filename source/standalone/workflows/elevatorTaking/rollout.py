@@ -125,7 +125,7 @@ def main():
         all_rollout_logs, video_paths = TrainUtils.rollout_with_stats(
             policy=policy,
             envs={"orbit": env},
-            horizon=1000,
+            horizon=400, # cannot be more than max_len of the iad algorithm
             use_goals=False,
             num_episodes=num_episodes,
             render=False,

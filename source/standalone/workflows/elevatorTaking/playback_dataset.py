@@ -69,11 +69,15 @@ import robomimic
 import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.file_utils as FileUtils
+import robomimic.utils.train_utils as TrainUtils
+from robomimic.config import config_factory
+import json
 from robomimic.envs.env_base import EnvBase, EnvType
 import time
 
 import gym
 import torch
+from torch.utils.data import DataLoader
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
@@ -106,8 +110,8 @@ def playback_trajectory_with_env(
 
     Args:
         env (instance of EnvBase): environment
-        states (np.array): array of simulation states to load
-        actions (np.array): if provided, play actions back open-loop instead of using @states
+        states (torch.tensor): seq, dim:  array of simulation states to load
+        actions (torch.tensor): if provided, play actions back open-loop instead of using @states
         video_writer (imageio writer): video writer
         video_skip (int): determines rate at which environment frames are written to video
         camera_names (list): determines which camera(s) are used for rendering. Pass more than
@@ -120,7 +124,7 @@ def playback_trajectory_with_env(
 
     # load the initial state
     env.reset()
-    env.reset_to(torch.tensor(states[0]).unsqueeze(0))
+    env.reset_to(states[0].unsqueeze(0))
 
     traj_len = states.shape[0]
     action_playback = (actions is not None)
@@ -130,20 +134,22 @@ def playback_trajectory_with_env(
     for i in range(traj_len):
         print("playback traj step {}".format(i))
         if action_playback:
-            env.step(torch.tensor(actions[i]).unsqueeze(0))
+            env.step(actions[i].unsqueeze(0))
             if i < traj_len - 1:
                 # check whether the actions deterministically lead to the same recorded states
                 state_playback = env.get_state()
                 # print("states[i+1]", states[i+1])
                 # print("state_playback",state_playback)
-                err = torch.norm(torch.tensor(states[i + 1]) - state_playback.squeeze(0))
+                err = torch.norm(states[i + 1] - state_playback.squeeze(0))
                 if err > 1e-3:
                     print("warning: playback diverged by {} at step {}".format(err, i))
-                    print("states:", torch.tensor(states[i + 1]))
+                    print("states:", states[i + 1])
                     print("state_playback", state_playback)
+            if env.is_success()["task"]:
+                print("TASK SUCCESS")
         else:
             raise ValueError("Must playback with action, add `--use-actions` in the cmd")
-            env.reset_to(torch.tensor(states[i]).unsqueeze(0))
+            env.reset_to(states[i].unsqueeze(0))
 
 
         if first:
@@ -183,6 +189,73 @@ def playback_trajectory_with_obs(
 
         if first:
             break
+
+
+def get_iterator_from_dataset(args):
+    f = h5py.File(args.dataset, "r")
+
+    # list of all demonstration episodes (sorted in increasing number order)
+    if args.filter_key is not None:
+        print("using filter key: {}".format(args.filter_key))
+        demos = [elem.decode("utf-8") for elem in np.array(f["mask/{}".format(args.filter_key)])]
+    else:
+        demos = list(f["data"].keys())
+    inds = np.argsort([int(elem[5:]) for elem in demos])
+    demos = [demos[i] for i in inds]
+
+    # maybe reduce the number of demonstrations to playback
+    if args.n is not None:
+        demos = demos[:args.n]
+    
+    for ind in range(len(demos)):
+        ep = demos[ind]
+        print("Loading episode: {}".format(ep))
+        # prepare initial state to reload from
+        states = f["data/{}/states".format(ep)][()]
+
+        traj_grp = f["data/{}".format(ep)]
+
+        # supply actions if using open-loop action playback
+        actions = None
+        if args.use_actions:
+            actions = f["data/{}/actions".format(ep)][()]
+        yield traj_grp, torch.tensor(states), torch.tensor(actions)
+    f.close()
+
+
+def get_iterator_from_dataloader(args):
+    config = config_factory("ycy")
+    ext_cfg = json.load(open(args.cfg, 'r'))
+    with config.values_unlocked():
+        config.update(ext_cfg)
+    config.train.data = args.dataset
+    config.train.batch_size = 1
+    config.train.dataset_keys = ["states", "actions"]
+    ObsUtils.initialize_obs_utils_with_config(config)
+
+    shape_meta = FileUtils.get_shape_metadata_from_dataset(
+        dataset_path=args.dataset,
+        all_obs_keys=config.all_obs_keys,
+        verbose=True
+    )
+        
+    trainset, validset = TrainUtils.load_data_for_training(
+        config, obs_keys=shape_meta["all_obs_keys"])
+    train_sampler = trainset.get_dataset_sampler()
+    train_loader = DataLoader(
+        dataset=trainset,
+        sampler=None, # turn off shuffle
+        batch_size=config.train.batch_size,
+        shuffle=None,
+        num_workers=config.train.num_data_workers,
+        drop_last=True
+    )
+    train_loader_iter = iter(train_loader)
+    for batch in train_loader_iter:
+        states = batch["states"]
+        actions = batch["actions"]
+        actions[~batch["pad_mask"].squeeze(2),:]=0
+        yield batch, batch["states"].squeeze(0), batch["actions"].squeeze(0)
 
 
 def playback_dataset(args):
@@ -232,58 +305,36 @@ def playback_dataset(args):
         env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
         print("env_made!!")
 
-    f = h5py.File(args.dataset, "r")
-
-    # list of all demonstration episodes (sorted in increasing number order)
-    if args.filter_key is not None:
-        print("using filter key: {}".format(args.filter_key))
-        demos = [elem.decode("utf-8") for elem in np.array(f["mask/{}".format(args.filter_key)])]
-    else:
-        demos = list(f["data"].keys())
-    inds = np.argsort([int(elem[5:]) for elem in demos])
-    demos = [demos[i] for i in inds]
-
-    # maybe reduce the number of demonstrations to playback
-    if args.n is not None:
-        demos = demos[:args.n]
-
     # maybe dump video
     video_writer = None
     if write_video:
         video_writer = imageio.get_writer(args.video_path, fps=20)
 
-    for ind in range(len(demos)):
-        ep = demos[ind]
-        print("Playing back episode: {}".format(ep))
+    if args.cfg is None:
+        dataset_iter = get_iterator_from_dataset(args)
+    else:
+        dataset_iter = get_iterator_from_dataloader(args)
 
+    for traj_grp, states, actions in dataset_iter:
         if args.use_obs:
             playback_trajectory_with_obs(
-                traj_grp=f["data/{}".format(ep)], 
+                traj_grp=traj_grp, 
                 video_writer=video_writer, 
                 video_skip=args.video_skip,
                 image_names=args.render_image_names,
                 first=args.first,
             )
             continue
+        else:
+            playback_trajectory_with_env(
+                env=env, 
+                states=states, actions=actions, 
+                video_writer=video_writer, 
+                video_skip=args.video_skip,
+                camera_names=args.render_image_names,
+                first=args.first,
+            )
 
-        # prepare initial state to reload from
-        states = f["data/{}/states".format(ep)][()]
-
-        # supply actions if using open-loop action playback
-        actions = None
-        if args.use_actions:
-            actions = f["data/{}/actions".format(ep)][()]
-
-        playback_trajectory_with_env(
-            env=env, 
-            states=states, actions=actions, 
-            video_writer=video_writer, 
-            video_skip=args.video_skip,
-            camera_names=args.render_image_names,
-            first=args.first,
-        )
-
-    f.close()
     if write_video:
         video_writer.close()
     # close the simulator
@@ -300,6 +351,14 @@ if __name__ == "__main__":
         type=str,
         help="path to hdf5 dataset",
     )
+
+    parser.add_argument(
+        "--cfg",
+        type=str,
+        default=None,
+        help="path to config file. If not none, will load trajectories from dataloader"
+    )
+
     parser.add_argument(
         "--filter_key",
         type=str,

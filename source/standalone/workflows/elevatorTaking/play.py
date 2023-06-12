@@ -72,7 +72,7 @@ def main():
     # robomimic only cares about policy observations
     obs = {f"{kk}:{k}":v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
     obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
-    print("Observation",{k: (v.shape, v.shape) for k, v in obs.items()})
+    # print("Observation",{k: v.shape for k, v in obs.items()})
     # simulate environment
     while simulation_app.is_running():
         # compute actions

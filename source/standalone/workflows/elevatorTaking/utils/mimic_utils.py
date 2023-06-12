@@ -1,7 +1,7 @@
 import torch
 from robomimic.algo import RolloutPolicy
 from robomimic.envs.env_gym import EnvGym
-
+import robomimic.utils.file_utils as FileUtils
 
 class RobomimicWrapper(RolloutPolicy):
     """The Wrapper of the RolloffPolicy
