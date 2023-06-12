@@ -481,6 +481,10 @@ class ElevatorEnv(IsaacEnv):
         # return list of global prims
         return ["/World/defaultGroundPlane"]
 
+    def reset_idx(self, env_ids: VecEnvIndices):
+        # ugly trick to bypass the private attribute check
+        self._reset_idx(env_ids)
+
     def _reset_idx(self, env_ids: VecEnvIndices):
         # randomize the MDP
         # -- robot DOF state
@@ -614,27 +618,29 @@ class ElevatorEnv(IsaacEnv):
 
     def get_state(self):
         # Return the underlying state of a simulated environment. Should be compatible with reset_to.
-
+        elevator_dofpos = self.elevator._dof_pos.to(self.device)
         elevator_state = self.elevator._sm_state.to(self.device)
         elevator_wait_time = self.elevator._sm.sm_wait_time.to(self.device).unsqueeze(1)
         robot_dofpos = self.robot.data.dof_pos.to(self.device) 
         robot_dofvel = self.robot.data.dof_vel.to(self.device) 
-        return torch.cat([elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel], dim=1)
+        return torch.cat([elevator_dofpos, elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel], dim=1)
 
     def reset_to(self, state):
         # Reset the simulated environment to a given state. Useful for reproducing results
         # state: N x D tensor, where N is the number of environments and D is the dimension of the state
         
         state_should_dims = [0]
+        state_should_dims.append(state_should_dims[-1] + self.elevator._dof_pos.shape[1])
         state_should_dims.append(state_should_dims[-1] + self.elevator._sm_state.shape[1])
         state_should_dims.append(state_should_dims[-1] + self.elevator._sm.sm_wait_time.shape[0])
         state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_pos.shape[1])
         state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_vel.shape[1])
         assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
-        self.elevator._sm_state = state[:, state_should_dims[0]:state_should_dims[1]].to(self.elevator._sm_state)
-        self.elevator._sm.sm_wait_time = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._sm.sm_wait_time).squeeze(1)
-        self.robot.data.dof_pos = state[:, state_should_dims[2]:state_should_dims[3]].to(self.robot.data.dof_pos)
-        self.robot.data.dof_vel = state[:, state_should_dims[3]:state_should_dims[4]].to(self.robot.data.dof_vel)
+        self.elevator._dof_pos = state[:, state_should_dims[0]:state_should_dims[1]].to(self.elevator._dof_pos)
+        self.elevator._sm_state = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._sm_state)
+        self.elevator._sm.sm_wait_time = state[:, state_should_dims[2]:state_should_dims[3]].to(self.elevator._sm.sm_wait_time).squeeze(1)
+        self.robot.data.dof_pos = state[:, state_should_dims[3]:state_should_dims[4]].to(self.robot.data.dof_pos)
+        self.robot.data.dof_vel = state[:, state_should_dims[4]:state_should_dims[5]].to(self.robot.data.dof_vel)
 
 
     """

@@ -240,7 +240,10 @@ def main():
             # -- obs
             for key, value in obs_mimic.items():
                 collector_interface.add(f"obs/{key}", value)
-                
+            
+            # -- states
+            collector_interface.add("states", env.get_state().cpu().numpy())
+
             if(EXP_CONFIGS["apply_action_noise"] is not None and EXP_CONFIGS["apply_action_noise"]):
                 actions += EXP_CONFIGS["apply_action_noise"] * torch.randn_like(actions)
 
@@ -261,8 +264,7 @@ def main():
             collector_interface.add("rewards", rewards)
             # -- dones
             collector_interface.add("dones", dones)
-            # -- states
-            collector_interface.add("states", env.get_state().cpu().numpy())
+
             # -- is-success label
             try:
                 success = info["is_success"]
@@ -275,8 +277,16 @@ def main():
                 for k,v in info["episode"].items():
                     collector_interface.add(f"episode_info/{k}", v.reshape(success.shape))
             # flush data from collector for successful environments
-            reset_env_ids = success.nonzero(as_tuple=False).squeeze(-1)
-            collector_interface.flush(reset_env_ids)
+            done_env_ids = dones.nonzero(as_tuple=False).squeeze(-1)
+            success_env_ids = success.nonzero(as_tuple=False).squeeze(-1)
+            collector_interface.flush(success_env_ids)
+            collector_interface.reset_buf_idx(done_env_ids)
+            # Need to manully reset the environment, otherwise the "states" does not get updated before the next episode
+            if len(done_env_ids) > 0:
+                env.reset_idx(done_env_ids)
+                env.reset_buf[done_env_ids] = 0.
+
+
 
     # close the simulator
     collector_interface.close()

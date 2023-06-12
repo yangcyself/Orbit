@@ -139,6 +139,8 @@ def playback_trajectory_with_env(
                 err = torch.norm(torch.tensor(states[i + 1]) - state_playback.squeeze(0))
                 if err > 1e-3:
                     print("warning: playback diverged by {} at step {}".format(err, i))
+                    print("states:", torch.tensor(states[i + 1]))
+                    print("state_playback", state_playback)
         else:
             raise ValueError("Must playback with action, add `--use-actions` in the cmd")
             env.reset_to(torch.tensor(states[i]).unsqueeze(0))

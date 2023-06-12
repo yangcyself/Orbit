@@ -224,6 +224,12 @@ class RobomimicDataCollector:
         if self._demo_count >= self._num_demos:
             self.close()
 
+    def reset_buf_idx(self, env_ids: Iterable[int] = (0)):
+        for index in env_ids:
+            print(">>> Resetting the buffer")
+            # reset buffer for environment
+            self._dataset[f"env_{index}"] = dict()
+
     def close(self):
         """Stop recording and save the file at its current state."""
         if not self._is_stop:
