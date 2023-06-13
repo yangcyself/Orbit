@@ -53,15 +53,99 @@ Example usage below:
         --video_path /tmp/dataset_task_inits.mp4
 """
 
+import argparse
 from omni.isaac.kit import SimulationApp
-config = {"headless": False}
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--dataset",
+    type=str,
+    help="path to hdf5 dataset",
+)
+
+parser.add_argument(
+    "--cfg",
+    type=str,
+    default=None,
+    help="path to config file. If not none, will load trajectories from dataloader"
+)
+
+parser.add_argument(
+    "--filter_key",
+    type=str,
+    default=None,
+    help="(optional) filter key, to select a subset of trajectories in the file",
+)
+
+# number of trajectories to playback. If omitted, playback all of them.
+parser.add_argument(
+    "--n",
+    type=int,
+    default=None,
+    help="(optional) stop after n trajectories are played",
+)
+
+# Use image observations instead of doing playback using the simulator env.
+parser.add_argument(
+    "--use-obs",
+    action='store_true',
+    help="visualize trajectories with dataset image observations instead of simulator",
+)
+
+# Playback stored dataset actions open-loop instead of loading from simulation states.
+parser.add_argument(
+    "--use-actions",
+    action='store_true',
+    help="use open-loop action playback instead of loading sim states",
+)
+
+# Dump a video of the dataset playback to the specified path
+parser.add_argument(
+    "--video_path",
+    type=str,
+    default=None,
+    help="(optional) render trajectories to this video file path",
+)
+
+# How often to write video frames during the playback
+parser.add_argument(
+    "--video_skip",
+    type=int,
+    default=1,
+    help="render frames to video every n steps",
+)
+
+# camera names to render, or image observations to use for writing to video
+parser.add_argument(
+    "--render_image_names",
+    type=str,
+    nargs='+',
+    default=None,
+    help="(optional) camera name(s) / image observation(s) to use for rendering on-screen or to video. Default is"
+            "None, which corresponds to a predefined camera for each env type",
+)
+
+# Only use the first frame of each episode
+parser.add_argument(
+    "--first",
+    action='store_true',
+    help="use first frame of each episode",
+)
+
+# Do not have GUI of orbit
+parser.add_argument(
+    "--headless",
+    action='store_true',
+    help="use first frame of each episode",
+)
+
+args = parser.parse_args()
+config = {"headless": args.headless}
 simulation_app = SimulationApp(config)
 
 import os
 import sys
 import json
 import h5py
-import argparse
 import imageio
 import numpy as np
 
@@ -137,7 +221,7 @@ def playback_trajectory_with_env(
 
     for i in range(traj_len):
         if action_playback:
-            env.step(actions[i].unsqueeze(0))
+            obs, r, d, info =  env.step(actions[i].unsqueeze(0))
             if i < traj_len - 1:
                 # check whether the actions deterministically lead to the same recorded states
                 state_playback = env.get_state()
@@ -148,21 +232,24 @@ def playback_trajectory_with_env(
                     print("warning: playback diverged by {} at step {}".format(err, i))
                     # print("states:", states[i + 1])
                     # print("state_playback", state_playback)
+
+                image_names = ["rgb:hand_camera_rgb"]
+                if(camera_names is not None): # compare the image from the simulator with the image in the dataset
+                    if video_count % video_skip == 0:
+                        # concatenate image obs together
+                        im_playback = [
+                            (obs_dict[k][i+1].permute(1,2,0) * 255.).type(torch.uint8)
+                            for k in image_names]
+                        # obs = env.get_observation()
+                        im_sim = [obs[k.split(":")[0]][k.split(":")[1]][0]
+                            for k in image_names]
+                        frame_playback = torch.cat(im_playback, axis=0)
+                        frame_sim = torch.cat(im_sim, axis=0)
+                        frame = torch.cat([frame_playback, frame_sim], axis=1)
+                        video_writer.append_data(frame.numpy())
+                    video_count += 1
             if env.is_success()["task"]:
                 print("TASK SUCCESS")
-            image_names = ["rgb:hand_camera_rgb"]
-            if(camera_names is not None): # compare the image from the simulator with the image in the dataset
-                if video_count % video_skip == 0:
-                    # concatenate image obs together
-                    im_playback = [obs_dict[k][i] for k in image_names]
-                    obs = env.get_observation()
-                    im_sim = [obs[k.split(":")[0]][k.split(":")[1]][0].permute(2, 0, 1).to(dtype=torch.float32)/256.
-                        for k in image_names]
-                    frame_playback = torch.cat(im_playback, axis=1)
-                    frame_sim = torch.cat(im_sim, axis=1)
-                    frame = torch.cat([frame_playback, frame_sim], axis=2)
-                    video_writer.append_data(frame.permute(1,2,0).numpy())
-                video_count += 1
 
         else:
             raise ValueError("Must playback with action, add `--use-actions` in the cmd")
@@ -312,8 +399,8 @@ def playback_dataset(args):
         env_cfg.initialization.elevator.max_init_floor = 5 # wait for at most 5 seconds
         env_cfg.initialization.elevator.moving_elevator_prob = 0 # wait for at most 5 seconds
         env_cfg.initialization.elevator.nonzero_floor_prob = 1 # wait for at most 5 seconds
-        env_cfg.initialization.robot.position_uniform_min = [1.4, 0.9, -1.6]  # position (x,y,z)
-        env_cfg.initialization.robot.position_uniform_max = [1.6, 1.1, -1.4]  # position (x,y,z)
+        env_cfg.initialization.robot.position_uniform_min = [1.4, 0.9, 1.6]  # position (x,y,z)
+        env_cfg.initialization.robot.position_uniform_max = [1.6, 1.1, 1.4]  # position (x,y,z)
         
         env_cfg.terminations.episode_timeout = True
         env_cfg.terminations.is_success = "pushed_btn"
@@ -322,7 +409,7 @@ def playback_dataset(args):
         env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
 
         # env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
-        env = myEnvGym("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=True)
+        env = myEnvGym("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
         print("env_made!!")
 
     # maybe dump video
@@ -366,81 +453,5 @@ def playback_dataset(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        help="path to hdf5 dataset",
-    )
 
-    parser.add_argument(
-        "--cfg",
-        type=str,
-        default=None,
-        help="path to config file. If not none, will load trajectories from dataloader"
-    )
-
-    parser.add_argument(
-        "--filter_key",
-        type=str,
-        default=None,
-        help="(optional) filter key, to select a subset of trajectories in the file",
-    )
-
-    # number of trajectories to playback. If omitted, playback all of them.
-    parser.add_argument(
-        "--n",
-        type=int,
-        default=None,
-        help="(optional) stop after n trajectories are played",
-    )
-
-    # Use image observations instead of doing playback using the simulator env.
-    parser.add_argument(
-        "--use-obs",
-        action='store_true',
-        help="visualize trajectories with dataset image observations instead of simulator",
-    )
-
-    # Playback stored dataset actions open-loop instead of loading from simulation states.
-    parser.add_argument(
-        "--use-actions",
-        action='store_true',
-        help="use open-loop action playback instead of loading sim states",
-    )
-
-    # Dump a video of the dataset playback to the specified path
-    parser.add_argument(
-        "--video_path",
-        type=str,
-        default=None,
-        help="(optional) render trajectories to this video file path",
-    )
-
-    # How often to write video frames during the playback
-    parser.add_argument(
-        "--video_skip",
-        type=int,
-        default=5,
-        help="render frames to video every n steps",
-    )
-
-    # camera names to render, or image observations to use for writing to video
-    parser.add_argument(
-        "--render_image_names",
-        type=str,
-        nargs='+',
-        default=None,
-        help="(optional) camera name(s) / image observation(s) to use for rendering on-screen or to video. Default is"
-             "None, which corresponds to a predefined camera for each env type",
-    )
-
-    # Only use the first frame of each episode
-    parser.add_argument(
-        "--first",
-        action='store_true',
-        help="use first frame of each episode",
-    )
-
-    args = parser.parse_args()
     playback_dataset(args)
