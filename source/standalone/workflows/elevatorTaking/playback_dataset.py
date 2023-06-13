@@ -97,6 +97,7 @@ DEFAULT_CAMERAS = {
 def playback_trajectory_with_env(
     env, 
     states, 
+    obs_dict = None,
     actions=None, 
     video_writer=None, 
     video_skip=5, 
@@ -131,8 +132,10 @@ def playback_trajectory_with_env(
     if action_playback:
         assert states.shape[0] == actions.shape[0]
 
+    if(camera_names is not None):
+        video_count = 0
+
     for i in range(traj_len):
-        print("playback traj step {}".format(i))
         if action_playback:
             env.step(actions[i].unsqueeze(0))
             if i < traj_len - 1:
@@ -143,10 +146,24 @@ def playback_trajectory_with_env(
                 err = torch.norm(states[i + 1] - state_playback.squeeze(0))
                 if err > 1e-3:
                     print("warning: playback diverged by {} at step {}".format(err, i))
-                    print("states:", states[i + 1])
-                    print("state_playback", state_playback)
+                    # print("states:", states[i + 1])
+                    # print("state_playback", state_playback)
             if env.is_success()["task"]:
                 print("TASK SUCCESS")
+            image_names = ["rgb:hand_camera_rgb"]
+            if(camera_names is not None): # compare the image from the simulator with the image in the dataset
+                if video_count % video_skip == 0:
+                    # concatenate image obs together
+                    im_playback = [obs_dict[k][i] for k in image_names]
+                    obs = env.get_observation()
+                    im_sim = [obs[k.split(":")[0]][k.split(":")[1]][0].permute(2, 0, 1).to(dtype=torch.float32)/256.
+                        for k in image_names]
+                    frame_playback = torch.cat(im_playback, axis=1)
+                    frame_sim = torch.cat(im_sim, axis=1)
+                    frame = torch.cat([frame_playback, frame_sim], axis=2)
+                    video_writer.append_data(frame.permute(1,2,0).numpy())
+                video_count += 1
+
         else:
             raise ValueError("Must playback with action, add `--use-actions` in the cmd")
             env.reset_to(states[i].unsqueeze(0))
@@ -219,7 +236,7 @@ def get_iterator_from_dataset(args):
         actions = None
         if args.use_actions:
             actions = f["data/{}/actions".format(ep)][()]
-        yield traj_grp, torch.tensor(states), torch.tensor(actions)
+        yield {k:torch.tensor(traj_grp[f"obs/{k}"]) for k in traj_grp["obs"].keys()}, torch.tensor(states), torch.tensor(actions)
     f.close()
 
 
@@ -251,11 +268,13 @@ def get_iterator_from_dataloader(args):
         drop_last=True
     )
     train_loader_iter = iter(train_loader)
-    for batch in train_loader_iter:
+    for i, batch in enumerate(train_loader_iter):
+        if(args.n is not None and i>args.n):
+            break
         states = batch["states"]
         actions = batch["actions"]
         actions[~batch["pad_mask"].squeeze(2),:]=0
-        yield batch, batch["states"].squeeze(0), batch["actions"].squeeze(0)
+        yield {k:v.squeeze(0) for k,v in batch["obs"].items()}, states.squeeze(0), actions.squeeze(0)
 
 
 def playback_dataset(args):
@@ -302,7 +321,8 @@ def playback_dataset(args):
         env_cfg.observations.return_dict_obs_in_group = True
         env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
 
-        env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
+        # env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
+        env = myEnvGym("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=True)
         print("env_made!!")
 
     # maybe dump video
@@ -315,10 +335,10 @@ def playback_dataset(args):
     else:
         dataset_iter = get_iterator_from_dataloader(args)
 
-    for traj_grp, states, actions in dataset_iter:
+    for obs_dict, states, actions in dataset_iter:
         if args.use_obs:
             playback_trajectory_with_obs(
-                traj_grp=traj_grp, 
+                obs_dict=obs_dict, 
                 video_writer=video_writer, 
                 video_skip=args.video_skip,
                 image_names=args.render_image_names,
@@ -328,6 +348,7 @@ def playback_dataset(args):
         else:
             playback_trajectory_with_env(
                 env=env, 
+                obs_dict=obs_dict,
                 states=states, actions=actions, 
                 video_writer=video_writer, 
                 video_skip=args.video_skip,

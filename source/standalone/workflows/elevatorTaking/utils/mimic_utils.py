@@ -31,8 +31,14 @@ class myEnvGym(EnvGym):
             ob (np.array): current flat observation vector to wrap and provide as a dictionary.
                 If not provided, uses self._current_obs.
         """
-        return obs
+        return obs if obs is not None else self._current_obs
     
+    def reset(self):
+        obs = self.env.reset()
+        self._current_obs = obs
+        return self.get_observation(obs)
+    
+
     def step(self, action):
         """
         Step in the environment with an action.
@@ -52,6 +58,12 @@ class myEnvGym(EnvGym):
         self._current_done = done
         return self.get_observation(obs), reward.detach().cpu().numpy(), self.is_done(), info
 
+    def get_state(self):
+        return self.env.get_state()
+    
+    def reset_to(self, state):
+        return self.env.reset_to(state)
+
     def is_success(self):
         """
         Check if the task condition(s) is reached. Should return a dictionary
@@ -62,3 +74,6 @@ class myEnvGym(EnvGym):
             k : v.cpu().numpy() 
             for k,v in self.env.is_success().items()
         }
+
+    def close(self):
+        self.env.close()
