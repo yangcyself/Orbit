@@ -46,7 +46,7 @@ def main():
     # modify configuration
     # env_cfg.control.control_type = "inverse_kinematics"
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
-    env_cfg.env.episode_length_s = 10.0
+    env_cfg.env.episode_length_s = 5.0
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = False
@@ -56,6 +56,8 @@ def main():
     env_cfg.initialization.robot.position_cat = "uniform"
     env_cfg.initialization.elevator.moving_elevator_prob = -1
     env_cfg.initialization.elevator.nonzero_floor_prob = 1
+    env_cfg.initialization.robot.position_uniform_min = [1.4, 0.9, -1.6]  # position (x,y,z)
+    env_cfg.initialization.robot.position_uniform_max = [1.6, 1.1, -1.4]  # position (x,y,z)
 
 
     # create environment
@@ -71,7 +73,8 @@ def main():
     policy.start_episode()
     # robomimic only cares about policy observations
     obs = {f"{kk}:{k}":v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
-    obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
+    obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)#.to(dtype=torch.float32)/256.
+    # print(obs["rgb:hand_camera_rgb"].shape, obs["rgb:hand_camera_rgb"].dtype, obs["rgb:hand_camera_rgb"].min(), obs["rgb:hand_camera_rgb"].max())
     # print("Observation",{k: v.shape for k, v in obs.items()})
     # simulate environment
     while simulation_app.is_running():
@@ -85,7 +88,8 @@ def main():
             break
         # robomimic only cares about policy observations
         obs = {f"{kk}:{k}":v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
-        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
+        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)#.to(dtype=torch.float32)/256.
+        # print(obs["rgb:hand_camera_rgb"].shape, obs["rgb:hand_camera_rgb"].dtype, obs["rgb:hand_camera_rgb"].min(), obs["rgb:hand_camera_rgb"].max())
         if done.any():
             policy.start_episode()
     # close the simulator

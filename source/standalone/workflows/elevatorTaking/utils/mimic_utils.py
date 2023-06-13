@@ -18,7 +18,8 @@ class RobomimicWrapper(RolloutPolicy):
 
     def __call__(self, ob, goal=None):
         obs = {f"{kk}:{k}":v[0] for kk,vv in ob.items() for k,v in vv.items()}
-        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)
+        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)#.to(dtype=torch.float32)/256.
+        # print(obs["rgb:hand_camera_rgb"].shape, obs["rgb:hand_camera_rgb"].dtype, obs["rgb:hand_camera_rgb"].min(), obs["rgb:hand_camera_rgb"].max())
         return torch.tensor(self.policy(obs)).to(self.device)[None,...]
 
 class myEnvGym(EnvGym):
