@@ -179,7 +179,7 @@ def main():
     env_cfg.terminations.is_success = "pushed_btn"
     env_cfg.terminations.collision = True
     env_cfg.observations.return_dict_obs_in_group = True
-    env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
+    env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"low_dim"}
     EXP_CONFIGS["wrapper_cfg"] = ACTOR_CONFIGS[EXP_CONFIGS["actor_type"]]
     if(EXP_CONFIGS["actor_type"] == "human"):    
         # Set wrapper config
@@ -195,7 +195,7 @@ def main():
         raise ValueError(f"Invalid actor type '{EXP_CONFIGS['actor_type']}'. Supported: 'human', 'rslrl'.")
 
     # create environment
-    env = gym.make(args_cli.task, cfg=env_cfg, headless=args_cli.headless)
+    env = gym.make(args_cli.task, cfg=env_cfg, headless=False) # must headless=False for camera image
 
     if(EXP_CONFIGS["actor_type"] == "human"):
         # create actor
@@ -242,7 +242,9 @@ def main():
                 collector_interface.add(f"obs/{key}", value)
             
             # -- states
-            collector_interface.add("states", env.get_state().cpu().numpy())
+            states = env.get_state()
+            collector_interface.add("states", states.cpu().numpy())
+            assert torch.norm(states[:,-2:] - obs_mimic["debug:debug_info"])<1e-9
 
             if(EXP_CONFIGS["apply_action_noise"] is not None and EXP_CONFIGS["apply_action_noise"]):
                 actions += EXP_CONFIGS["apply_action_noise"] * torch.randn_like(actions)
@@ -283,8 +285,11 @@ def main():
             collector_interface.reset_buf_idx(done_env_ids)
             # Need to manully reset the environment, otherwise the "states" does not get updated before the next episode
             if len(done_env_ids) > 0:
+                print("Resetting envs")
                 env.reset_idx(done_env_ids)
                 env.reset_buf[done_env_ids] = 0.
+                obs = env.get_observations()
+                obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 
 
 

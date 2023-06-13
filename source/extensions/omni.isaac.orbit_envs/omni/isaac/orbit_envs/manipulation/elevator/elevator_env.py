@@ -330,7 +330,8 @@ class Elevator:
             return
         self._sm.reset_idx(env_ids)
         self.articulations.set_joint_positions(torch.zeros((len(env_ids), 4),device = self.device), env_ids, self._dof_index_door)
-        self.articulations.set_joint_positions(torch.full((len(env_ids), len(self._dof_index_btn)),1e-3,device = self.device), env_ids, self._dof_index_btn)
+        self.articulations.set_joint_positions(torch.full((len(env_ids), len(self._dof_index_btn)),2e-3,device = self.device), env_ids, self._dof_index_btn)
+        self.articulations.set_joint_velocities(torch.full((len(env_ids), len(self._dof_index)),0.,device = self.device), env_ids)
 
     def update_buffers(self, dt: float):
         self._dof_pos[:] = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
@@ -392,9 +393,11 @@ class ElevatorEnv(IsaacEnv):
 
         # An array to record if the robot has pushed the button in the episode
         self._hasdone_pushbtn = torch.zeros((self.num_envs, ), dtype = bool, device=self.device)
+        # An array to keep track which frame is this it. # traj_id, frame_id
+        self.debug_tracker = torch.zeros((self.num_envs, 2), dtype = torch.int32, device=self.device)
 
         assert (self.num_envs == 1 or self.camera is None), "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
-
+        assert (self.enable_render or self.camera is None), "ElevatorEnv need `headless=False` if camera is wanted"
         # prepare the observation manager
         obs_cfg_dict = class_to_dict(self.cfg.observations)
         obs_cfg_dict = {k: v for k, v in obs_cfg_dict.items() if k in self.modalities}
@@ -514,6 +517,8 @@ class ElevatorEnv(IsaacEnv):
         self.episode_length_buf[env_ids] = 0
         # -- Success reset
         self._hasdone_pushbtn[env_ids] = False
+        self.debug_tracker[env_ids, 0] = torch.randint(0, int(1e9), (len(env_ids),)).to(device=self.device,dtype=torch.int32)
+        self.debug_tracker[env_ids, 1] = 0
 
         # controller reset
         if self.cfg.control.control_type == "inverse_kinematics":
@@ -576,10 +581,16 @@ class ElevatorEnv(IsaacEnv):
         self.elevator.update_buffers(self.dt)
         if(self.camera is not None):
             self.camera.update(dt=self.dt)
+
+        # -- compute mid-level states # this should happen before reward, termination, observation and success
+        elevator_state = self.elevator._sm_state.to(self.device)
+        self._hasdone_pushbtn = torch.where(elevator_state[:,2]>0, True, self._hasdone_pushbtn)
+        self._hasdone_pushbtn = torch.where(elevator_state[:,3]>0, True, self._hasdone_pushbtn)
+        self.debug_tracker[:,1] += 1
+
         # -- compute MDP signals
         # reward
         self.reward_penalizing_factor = torch.ones(self.num_envs, device=self.device)
-        elevator_state = self.elevator._sm_state.to(self.device)
         self.reward_penalizing_factor[elevator_state[:,0]==1] *= 2.
         self.reward_penalizing_factor[elevator_state[:,0]==2] *= 2.
         self.reward_penalizing_factor[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] *= 3.
@@ -593,14 +604,14 @@ class ElevatorEnv(IsaacEnv):
         # -- add information to extra if timeout occurred due to episode length
         # Note: this is used by algorithms like PPO where time-outs are handled differently
         self.extras["time_outs"] = self.episode_length_buf >= self.max_episode_length
-        robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
         self.extras["is_success"] = self.is_success()["task"]
-        self._hasdone_pushbtn = torch.where(elevator_state[:,2]>0, True, self._hasdone_pushbtn)
-        self._hasdone_pushbtn = torch.where(elevator_state[:,3]>0, True, self._hasdone_pushbtn)
         # -- update USD visualization
         if self.cfg.viewer.debug_vis and self.enable_render:
             self._debug_vis()
 
+    def get_observations(self) -> VecEnvObs:
+        # Just bypass the private method check
+        return self._get_observations()
 
     def _get_observations(self) -> VecEnvObs:
         # compute observations
@@ -623,7 +634,8 @@ class ElevatorEnv(IsaacEnv):
         elevator_wait_time = self.elevator._sm.sm_wait_time.to(self.device).unsqueeze(1)
         robot_dofpos = self.robot.data.dof_pos.to(self.device) 
         robot_dofvel = self.robot.data.dof_vel.to(self.device) 
-        return torch.cat([elevator_dofpos, elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel], dim=1)
+        debug_info = self.debug_tracker.to(self.device)
+        return torch.cat([elevator_dofpos, elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel, debug_info], dim=1)
 
     def reset_to(self, state):
         # Reset the simulated environment to a given state. Useful for reproducing results
@@ -635,12 +647,14 @@ class ElevatorEnv(IsaacEnv):
         state_should_dims.append(state_should_dims[-1] + self.elevator._sm.sm_wait_time.shape[0])
         state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_pos.shape[1])
         state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_vel.shape[1])
+        state_should_dims.append(state_should_dims[-1] + self.debug_tracker.shape[1])
         assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
         self.elevator._dof_pos[:,:] = state[:, state_should_dims[0]:state_should_dims[1]].to(self.elevator._dof_pos)
         self.elevator._sm_state[:,:] = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._sm_state)
         self.elevator._sm.sm_wait_time[:] = state[:, state_should_dims[2]:state_should_dims[3]].to(self.elevator._sm.sm_wait_time).squeeze(1)
         self.robot.data.dof_pos[:,:] = state[:, state_should_dims[3]:state_should_dims[4]].to(self.robot.data.dof_pos)
         self.robot.data.dof_vel[:,:] = state[:, state_should_dims[4]:state_should_dims[5]].to(self.robot.data.dof_vel)
+        self.debug_tracker[:,:] = state[:, state_should_dims[5]:state_should_dims[6]].to(self.debug_tracker)
 
 
     """
@@ -836,6 +850,9 @@ class ElevatorObservationManager(ObservationManager):
     def actions(self, env: ElevatorEnv):
         """Last actions provided to env."""
         return env.actions
+    
+    def debug_info(self, env: ElevatorEnv):
+        return env.debug_tracker
 
 
 class ElevatorRewardManager(RewardManager):
