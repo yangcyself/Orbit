@@ -24,6 +24,7 @@ parser.add_argument("--sensitivity", type=float, default=1.0, help="Sensitivity 
 parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
 parser.add_argument("--prefix", type=str, default=".", help="Save dataset to <prefix>/logs/rolloutCollection.")
 parser.add_argument("--notCollectDemonstration", action="store_true", default=False, help="Do not collect demonstration.")
+parser.add_argument("--debug", action="store_true", default=False, help="Whether or not use debug states and observation.")
 args_cli = parser.parse_args()
 args_cli.task = "Isaac-Elevator-Franka-v0"
 # launch the simulator
@@ -179,7 +180,10 @@ def main():
     env_cfg.terminations.is_success = "pushed_btn"
     env_cfg.terminations.collision = True
     env_cfg.observations.return_dict_obs_in_group = True
-    env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"low_dim"}
+    if args_cli.debug:
+        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"debug"}
+    else:
+        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
     EXP_CONFIGS["wrapper_cfg"] = ACTOR_CONFIGS[EXP_CONFIGS["actor_type"]]
     if(EXP_CONFIGS["actor_type"] == "human"):    
         # Set wrapper config
@@ -244,7 +248,8 @@ def main():
             # -- states
             states = env.get_state()
             collector_interface.add("states", states.cpu().numpy())
-            assert torch.norm(states[:,-2:] - obs_mimic["debug:debug_info"])<1e-9
+            if(args_cli.debug):
+                assert torch.norm(states[:,-2:] - obs_mimic["debug:debug_info"])<1e-9
 
             if(EXP_CONFIGS["apply_action_noise"] is not None and EXP_CONFIGS["apply_action_noise"]):
                 actions += EXP_CONFIGS["apply_action_noise"] * torch.randn_like(actions)
@@ -281,10 +286,11 @@ def main():
             # flush data from collector for successful environments
             done_env_ids = dones.nonzero(as_tuple=False).squeeze(-1)
             success_env_ids = success.nonzero(as_tuple=False).squeeze(-1)
-            for si in success_env_ids:
-                for i,debug_info in enumerate(collector_interface._dataset[f"env_{si}"]["obs"]["debug:debug_info"]):
-                    assert debug_info[1] == i, "step count should start from 0 and increase by 1"
-                    assert debug_info[0] == collector_interface._dataset[f"env_{si}"]["obs"]["debug:debug_info"][0][0], "should be the same traj"
+            if (args_cli.debug):
+                for si in success_env_ids:
+                    for i,debug_info in enumerate(collector_interface._dataset[f"env_{si}"]["obs"]["debug:debug_info"]):
+                        assert debug_info[1] == i, "step count should start from 0 and increase by 1"
+                        assert debug_info[0] == collector_interface._dataset[f"env_{si}"]["obs"]["debug:debug_info"][0][0], "should be the same traj"
             collector_interface.flush(success_env_ids)
             collector_interface.reset_buf_idx(done_env_ids)
             # Need to manully reset the environment, otherwise the "states" does not get updated before the next episode

@@ -69,7 +69,6 @@ class ObservationsCfg:
         dof_vel = {"scale": 0.5, "noise": {"name": "uniform", "min": -0.1, "max": 0.1}}
         ee_position = {}
         actions = {}
-        debug_info = {}
 
     @configclass
     class PrivilegeCfg:
@@ -88,13 +87,17 @@ class ObservationsCfg:
     @configclass
     class RGBCfg:
         hand_camera_rgb = {}
-
+    
+    @configclass
+    class DebugCfg:
+        debug_info = {}
 
     # global observation settings
     return_dict_obs_in_group = True
     """Whether to return observations as dictionary or flattened vector within groups."""
     # observation groups
     low_dim: LowDimCfg = LowDimCfg()
+    debug: DebugCfg = DebugCfg()
     rgb: RGBCfg = RGBCfg()
     privilege: PrivilegeCfg = PrivilegeCfg()
 

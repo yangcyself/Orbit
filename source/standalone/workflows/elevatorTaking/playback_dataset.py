@@ -135,7 +135,15 @@ parser.add_argument(
 parser.add_argument(
     "--headless",
     action='store_true',
-    help="use first frame of each episode",
+    help="use headless mode of SimulationApp, Note: env will be kept as non-headless"
+)
+
+# Debug
+parser.add_argument(
+    "--debug",
+    action='store_true',
+    default=False,
+    help="debug mode",
 )
 
 args = parser.parse_args()
@@ -183,6 +191,7 @@ def playback_trajectory_with_env(
     states, 
     obs_dict = None,
     actions=None, 
+    pad_mask = None,
     video_writer=None, 
     video_skip=5, 
     camera_names=None,
@@ -224,17 +233,33 @@ def playback_trajectory_with_env(
     for i in range(traj_len):
         if action_playback:
             obs, r, d, info =  env.step(actions[i].unsqueeze(0))
+            obs = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
             if i < traj_len - 1:
                 # check whether the actions deterministically lead to the same recorded states
                 state_playback = env.get_state()
                 # print("states[i+1]", states[i+1])
                 # print("state_playback",state_playback)
-                print(states[i+1][-2:], state_playback[:,-2:], obs_dict['debug:debug_info'][i+1], obs['debug']['debug_info'])
-                err = torch.norm(states[i + 1] - state_playback.squeeze(0))
-                if err > 1e-3:
+                if(args.debug and (pad_mask is None or pad_mask[i+1]>0)):
+                    assert (states[i+1][-2:].type(torch.int32) == state_playback[:,-2:].type(torch.int32)).all()
+                    assert (states[i+1][-2:].type(torch.int32) == obs_dict['debug:debug_info'][i+1].type(torch.int32)).all()
+                    assert (states[i+1][-2:].type(torch.int32) == obs['debug:debug_info'].type(torch.int32)).all()
+                err = (states[i + 1] - state_playback.squeeze(0)).abs().max()
+                if ((err > 1e-4) and (pad_mask is None or pad_mask[i+1]>0)):
                     print("warning: playback diverged by {} at step {}".format(err, i))
                     # print("states:", states[i + 1])
                     # print("state_playback", state_playback)
+
+                if(args.debug and (pad_mask is None or pad_mask[i+1]>0)):
+                    # check all the obs are the same
+                    for k in obs_dict.keys():
+                        if("pad_mask" in k):
+                            continue
+                        elif(k.startswith('rgb')):
+                            err = (obs_dict[k][i+1] - obs[k].squeeze(0).permute(2,0,1)/255.).abs().max()
+                        else:
+                            err = (obs_dict[k][i+1] - obs[k].squeeze(0)).abs().max()
+                        if err > 1e-4:
+                            print("warning: obs {} diverged by {} at step {}".format(k, err, i))
 
                 image_names = ["rgb:hand_camera_rgb"]
                 if(camera_names is not None): # compare the image from the simulator with the image in the dataset
@@ -243,9 +268,7 @@ def playback_trajectory_with_env(
                         im_playback = [
                             (obs_dict[k][i+1].permute(1,2,0) * 255.).type(torch.uint8)
                             for k in image_names]
-                        # obs = env.get_observation()
-                        im_sim = [obs[k.split(":")[0]][k.split(":")[1]][0]
-                            for k in image_names]
+                        im_sim = [obs[k].squeeze(0) for k in image_names]
                         frame_playback = torch.cat(im_playback, axis=0)
                         frame_sim = torch.cat(im_sim, axis=0)
                         frame = torch.cat([frame_playback, frame_sim], axis=1)
@@ -326,7 +349,7 @@ def get_iterator_from_dataset(args):
         actions = None
         if args.use_actions:
             actions = f["data/{}/actions".format(ep)][()]
-        yield {k:torch.tensor(traj_grp[f"obs/{k}"]) for k in traj_grp["obs"].keys()}, torch.tensor(states), torch.tensor(actions)
+        yield {k:torch.tensor(traj_grp[f"obs/{k}"]) for k in traj_grp["obs"].keys()}, torch.tensor(states), torch.tensor(actions), None
     f.close()
 
 
@@ -363,8 +386,9 @@ def get_iterator_from_dataloader(args):
             break
         states = batch["states"]
         actions = batch["actions"]
-        actions[~batch["pad_mask"].squeeze(2),:]=0
-        yield {k:v.squeeze(0) for k,v in batch["obs"].items()}, states.squeeze(0), actions.squeeze(0)
+        pad_mask = batch["pad_mask"]
+        actions[~pad_mask.squeeze(2),:]=0
+        yield {k:v.squeeze(0) for k,v in batch["obs"].items()}, states.squeeze(0), actions.squeeze(0), pad_mask.squeeze(2).squeeze(0)
 
 
 def playback_dataset(args):
@@ -409,7 +433,10 @@ def playback_dataset(args):
         env_cfg.terminations.is_success = "pushed_btn"
         env_cfg.terminations.collision = True
         env_cfg.observations.return_dict_obs_in_group = True
-        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"low_dim"}
+        if(args.debug):
+            env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"debug"}
+        else:
+            env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
 
         # env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
         env = myEnvGym("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
@@ -425,7 +452,7 @@ def playback_dataset(args):
     else:
         dataset_iter = get_iterator_from_dataloader(args)
 
-    for obs_dict, states, actions in dataset_iter:
+    for obs_dict, states, actions, pad_mask in dataset_iter:
         if args.use_obs:
             playback_trajectory_with_obs(
                 obs_dict=obs_dict, 
@@ -440,6 +467,7 @@ def playback_dataset(args):
                 env=env, 
                 obs_dict=obs_dict,
                 states=states, actions=actions, 
+                pad_mask=pad_mask,
                 video_writer=video_writer, 
                 video_skip=args.video_skip,
                 camera_names=args.render_image_names,
