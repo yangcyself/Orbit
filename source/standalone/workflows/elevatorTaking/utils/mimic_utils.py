@@ -6,9 +6,9 @@ import robomimic.utils.file_utils as FileUtils
 class RobomimicWrapper(RolloutPolicy):
     """The Wrapper of the RolloffPolicy
     """
-    def __init__(self, checkpoint, device):
+    def __init__(self, checkpoint, device, verbose=False):
         self.device = device
-        self.policy, _ = FileUtils.policy_from_checkpoint(ckpt_path=checkpoint, device=device, verbose=True)
+        self.policy, _ = FileUtils.policy_from_checkpoint(ckpt_path=checkpoint, device=device, verbose=verbose)
 
     def start_episode(self):
         self.policy.start_episode()
@@ -18,7 +18,8 @@ class RobomimicWrapper(RolloutPolicy):
 
     def __call__(self, ob, goal=None):
         obs = {f"{kk}:{k}":v[0] for kk,vv in ob.items() for k,v in vv.items()}
-        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)#.to(dtype=torch.float32)/256.
+        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1).to(dtype=torch.float32)/255.
+        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].clamp(min =0., max=1.)
         # print(obs["rgb:hand_camera_rgb"].shape, obs["rgb:hand_camera_rgb"].dtype, obs["rgb:hand_camera_rgb"].min(), obs["rgb:hand_camera_rgb"].max())
         return torch.tensor(self.policy(obs)).to(self.device)[None,...]
 

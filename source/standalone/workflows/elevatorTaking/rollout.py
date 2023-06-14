@@ -102,7 +102,7 @@ def main():
         done_files = []
 
     # create environment
-    env = myEnvGym(args_cli.task, cfg= env_cfg, headless= args_cli.headless)
+    env = myEnvGym(args_cli.task, cfg= env_cfg, headless= False)
     
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)

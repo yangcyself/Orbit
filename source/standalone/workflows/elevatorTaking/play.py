@@ -37,6 +37,7 @@ import robomimic.utils.torch_utils as TorchUtils
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
+from utils.mimic_utils import RobomimicWrapper, myEnvGym
 
 
 def main():
@@ -48,7 +49,7 @@ def main():
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
     env_cfg.env.episode_length_s = 5.0
     env_cfg.terminations.episode_timeout = True
-    env_cfg.terminations.is_success = True
+    env_cfg.terminations.is_success = "pushed_btn"
     env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
     env_cfg.control.control_type = "ohneHand"
@@ -66,30 +67,18 @@ def main():
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
     # restore policy
-    policy, _ = FileUtils.policy_from_checkpoint(ckpt_path=args_cli.checkpoint, device=device, verbose=True)
-
+    policy = RobomimicWrapper(checkpoint = args_cli.checkpoint, device = device, verbose = False)
     # reset environment
     obs_dict = env.reset()
     policy.start_episode()
-    # robomimic only cares about policy observations
-    obs = {f"{kk}:{k}":v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
-    obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)#.to(dtype=torch.float32)/256.
-    # print(obs["rgb:hand_camera_rgb"].shape, obs["rgb:hand_camera_rgb"].dtype, obs["rgb:hand_camera_rgb"].min(), obs["rgb:hand_camera_rgb"].max())
-    # print("Observation",{k: v.shape for k, v in obs.items()})
     # simulate environment
     while simulation_app.is_running():
         # compute actions
-        actions = policy(obs)
-        actions = torch.from_numpy(actions).to(device=device).view(1, env.action_space.shape[0])
-        # apply actions
+        actions = policy(obs_dict)
         obs_dict, _, done, info = env.step(actions)
         # check if simulator is stopped
         if env.unwrapped.sim.is_stopped():
             break
-        # robomimic only cares about policy observations
-        obs = {f"{kk}:{k}":v[0] for kk,vv in obs_dict.items() for k,v in vv.items()}
-        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1)#.to(dtype=torch.float32)/256.
-        # print(obs["rgb:hand_camera_rgb"].shape, obs["rgb:hand_camera_rgb"].dtype, obs["rgb:hand_camera_rgb"].min(), obs["rgb:hand_camera_rgb"].max())
         if done.any():
             policy.start_episode()
     # close the simulator
