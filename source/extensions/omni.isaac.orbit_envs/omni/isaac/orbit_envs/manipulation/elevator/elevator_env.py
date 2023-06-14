@@ -629,13 +629,14 @@ class ElevatorEnv(IsaacEnv):
 
     def get_state(self):
         # Return the underlying state of a simulated environment. Should be compatible with reset_to.
-        elevator_dofpos = self.elevator._dof_pos.to(self.device)
+        elevator_dofpos = self.elevator.articulations.get_joint_positions(indices=self.elevator.all_mask, clone=True).to(self.device)
+        elevator_dofvel = self.elevator.articulations.get_joint_velocities(indices=self.elevator.all_mask, clone=True).to(self.device)
         elevator_state = self.elevator._sm_state.to(self.device)
         elevator_wait_time = self.elevator._sm.sm_wait_time.to(self.device).unsqueeze(1)
-        robot_dofpos = self.robot.data.dof_pos.to(self.device) 
-        robot_dofvel = self.robot.data.dof_vel.to(self.device) 
+        robot_dofpos = self.robot.articulations.get_joint_positions(indices=self.robot._ALL_INDICES, clone=True).to(self.device) 
+        robot_dofvel = self.robot.articulations.get_joint_velocities(indices=self.robot._ALL_INDICES, clone=True).to(self.device) 
         debug_info = self.debug_tracker.to(self.device)
-        return torch.cat([elevator_dofpos, elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel, debug_info], dim=1)
+        return torch.cat([elevator_dofpos, elevator_dofvel, elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel, debug_info], dim=1)
 
     def reset_to(self, state):
         # Reset the simulated environment to a given state. Useful for reproducing results
@@ -643,6 +644,7 @@ class ElevatorEnv(IsaacEnv):
         
         state_should_dims = [0]
         state_should_dims.append(state_should_dims[-1] + self.elevator._dof_pos.shape[1])
+        state_should_dims.append(state_should_dims[-1] + self.elevator._dof_pos.shape[1]) # dof_vel
         state_should_dims.append(state_should_dims[-1] + self.elevator._sm_state.shape[1])
         state_should_dims.append(state_should_dims[-1] + self.elevator._sm.sm_wait_time.shape[0])
         state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_pos.shape[1])
@@ -650,12 +652,17 @@ class ElevatorEnv(IsaacEnv):
         state_should_dims.append(state_should_dims[-1] + self.debug_tracker.shape[1])
         assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
         self.elevator._dof_pos[:,:] = state[:, state_should_dims[0]:state_should_dims[1]].to(self.elevator._dof_pos)
-        self.elevator._sm_state[:,:] = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._sm_state)
-        self.elevator._sm.sm_wait_time[:] = state[:, state_should_dims[2]:state_should_dims[3]].to(self.elevator._sm.sm_wait_time).squeeze(1)
-        self.robot.data.dof_pos[:,:] = state[:, state_should_dims[3]:state_should_dims[4]].to(self.robot.data.dof_pos)
-        self.robot.data.dof_vel[:,:] = state[:, state_should_dims[4]:state_should_dims[5]].to(self.robot.data.dof_vel)
-        self.debug_tracker[:,:] = state[:, state_should_dims[5]:state_should_dims[6]].to(self.debug_tracker)
-
+        _dof_vel = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._dof_pos)
+        self.elevator._sm_state[:,:] = state[:, state_should_dims[2]:state_should_dims[3]].to(self.elevator._sm_state)
+        self.elevator._sm.sm_wait_time[:] = state[:, state_should_dims[3]:state_should_dims[4]].to(self.elevator._sm.sm_wait_time).squeeze(1)
+        self.robot.data.dof_pos[:,:] = state[:, state_should_dims[4]:state_should_dims[5]].to(self.robot.data.dof_pos)
+        self.robot.data.dof_vel[:,:] = state[:, state_should_dims[5]:state_should_dims[6]].to(self.robot.data.dof_vel)
+        self.debug_tracker[:,:] = state[:, state_should_dims[6]:state_should_dims[7]].to(self.debug_tracker)
+        
+        self.elevator.articulations.set_joint_positions(self.elevator._dof_pos, indices=self.elevator.all_mask)
+        self.elevator.articulations.set_joint_velocities(_dof_vel, indices=self.elevator.all_mask)
+        self.robot.articulations.set_joint_positions(self.robot.data.dof_pos, indices=self.robot._ALL_INDICES)
+        self.robot.articulations.set_joint_velocities(self.robot.data.dof_vel, indices=self.robot._ALL_INDICES)
 
     """
     Helper functions - Scene handling.

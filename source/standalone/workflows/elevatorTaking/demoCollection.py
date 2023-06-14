@@ -281,6 +281,10 @@ def main():
             # flush data from collector for successful environments
             done_env_ids = dones.nonzero(as_tuple=False).squeeze(-1)
             success_env_ids = success.nonzero(as_tuple=False).squeeze(-1)
+            for si in success_env_ids:
+                for i,debug_info in enumerate(collector_interface._dataset[f"env_{si}"]["obs"]["debug:debug_info"]):
+                    assert debug_info[1] == i, "step count should start from 0 and increase by 1"
+                    assert debug_info[0] == collector_interface._dataset[f"env_{si}"]["obs"]["debug:debug_info"][0][0], "should be the same traj"
             collector_interface.flush(success_env_ids)
             collector_interface.reset_buf_idx(done_env_ids)
             # Need to manully reset the environment, otherwise the "states" does not get updated before the next episode

@@ -174,13 +174,13 @@ class RobomimicDataCollector:
                 if sub_keys[1] not in self._dataset[f"env_{i}"][sub_keys[0]]:
                     self._dataset[f"env_{i}"][sub_keys[0]][sub_keys[1]] = list()
                 # add data to key
-                self._dataset[f"env_{i}"][sub_keys[0]][sub_keys[1]].append(value[i])
+                self._dataset[f"env_{i}"][sub_keys[0]][sub_keys[1]].append(value[i].copy())
             else:
                 # create keys
                 if sub_keys[0] not in self._dataset[f"env_{i}"]:
                     self._dataset[f"env_{i}"][sub_keys[0]] = list()
                 # add data to key
-                self._dataset[f"env_{i}"][sub_keys[0]].append(value[i])
+                self._dataset[f"env_{i}"][sub_keys[0]].append(value[i].copy())
 
     def flush(self, env_ids: Iterable[int] = (0)):
         """Flush the episode data based on environment indices.

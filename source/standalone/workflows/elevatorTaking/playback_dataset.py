@@ -210,6 +210,8 @@ def playback_trajectory_with_env(
     # load the initial state
     env.reset()
     env.reset_to(states[0].unsqueeze(0))
+    states0 = env.get_state()
+    assert (states[0].unsqueeze(0)- states0).abs().max()<1e-12, "states[0] and states0 are not the same"
 
     traj_len = states.shape[0]
     action_playback = (actions is not None)
@@ -227,6 +229,7 @@ def playback_trajectory_with_env(
                 state_playback = env.get_state()
                 # print("states[i+1]", states[i+1])
                 # print("state_playback",state_playback)
+                print(states[i+1][-2:], state_playback[:,-2:], obs_dict['debug:debug_info'][i+1], obs['debug']['debug_info'])
                 err = torch.norm(states[i + 1] - state_playback.squeeze(0))
                 if err > 1e-3:
                     print("warning: playback diverged by {} at step {}".format(err, i))
@@ -406,7 +409,7 @@ def playback_dataset(args):
         env_cfg.terminations.is_success = "pushed_btn"
         env_cfg.terminations.collision = True
         env_cfg.observations.return_dict_obs_in_group = True
-        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
+        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"low_dim"}
 
         # env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
         env = myEnvGym("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
