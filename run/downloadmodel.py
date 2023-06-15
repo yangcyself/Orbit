@@ -36,22 +36,28 @@ try:
     for exppath in files_to_download:
 
         file_path = os.path.join(exppath, "models", f"model_epoch_{args.epoch_number}.pth")
+        relative_path = os.path.relpath(file_path, args.logsprefix)
         print("downloading:", f"{args.user}@{args.host}:{file_path}")
         # Define the target path
-        relative_path = os.path.relpath(file_path, args.logsprefix)
         print("to:", relative_path)
         
         # Ensure the local directory exists
         os.makedirs(os.path.dirname(relative_path), exist_ok=True)
         
         # Execute scp command to download the file
-        subprocess.run(["scp", f"{args.user}@{args.host}:{file_path}", 
+        subprocess.run(["rsync", f"{args.user}@{args.host}:{file_path}", 
             relative_path], check=True)
+        
+        config_path = os.path.join(exppath, "config.json")
+        relative_path = os.path.relpath(config_path, args.logsprefix)
+        subprocess.run(["rsync", f"{args.user}@{args.host}:{config_path}", 
+            relative_path], check=True)
+        
         if(args.store_logs):
             logs_path = os.path.join(exppath, "logs")
-            relative_path = os.path.relpath(logs_path, args.logsprefix)
-            subprocess.run(["scp", "-r", f"{args.user}@{args.host}:{logs_path}", 
-                logs_path], check=True)
+            relative_path = os.path.dirname(os.path.relpath(logs_path, args.logsprefix))
+            subprocess.run(["rsync", "-r", f"{args.user}@{args.host}:{logs_path}", 
+                relative_path], check=True)
 
     print("Files successfully copied")
 
