@@ -102,7 +102,7 @@ def main():
     # modify configuration
     # env_cfg.control.control_type = "inverse_kinematics"
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
-    env_cfg.env.episode_length_s = 5.
+    env_cfg.env.episode_length_s = 15.
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = False
@@ -112,8 +112,10 @@ def main():
     env_cfg.initialization.robot.position_cat = "uniform"
     env_cfg.initialization.elevator.moving_elevator_prob = 0
     env_cfg.initialization.elevator.nonzero_floor_prob = 1
-    env_cfg.terminations.is_success = "pushed_btn"
-
+    env_cfg.initialization.elevator.max_init_floor = 2
+    env_cfg.terminations.is_success = "enter_elevator"
+    env_cfg.initialization.robot.position_uniform_min = [1.4, 0.9, -1.6]  # position (x,y,z)
+    env_cfg.initialization.robot.position_uniform_max = [1.6, 1.1, -1.4]  # position (x,y,z)
 
 
     if args_cli.resume is not None:
@@ -168,7 +170,7 @@ def main():
         all_rollout_logs, video_paths = TrainUtils.rollout_with_stats(
             policy=policy,
             envs={"orbit": env},
-            horizon=50, # cannot be more than max_len of the iad algorithm
+            horizon=int(env_cfg.env.episode_length_s*10), # cannot be more than max_len of the iad algorithm
             use_goals=False,
             num_episodes=num_episodes,
             render=False,
