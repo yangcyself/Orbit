@@ -47,9 +47,9 @@ def main():
     # modify configuration
     # env_cfg.control.control_type = "inverse_kinematics"
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
-    env_cfg.env.episode_length_s = 5.0
+    env_cfg.env.episode_length_s = 2.0
     env_cfg.terminations.episode_timeout = True
-    env_cfg.terminations.is_success = "pushed_btn"
+    env_cfg.terminations.is_success = "enter_elevator"
     env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
     env_cfg.control.control_type = "ohneHand"
@@ -62,7 +62,7 @@ def main():
 
 
     # create environment
-    env = gym.make(args_cli.task, cfg=env_cfg, headless=args_cli.headless)
+    env = gym.make(args_cli.task, cfg=env_cfg, headless=False)
 
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
