@@ -1,3 +1,4 @@
+import gym
 import torch
 from robomimic.algo import RolloutPolicy
 from robomimic.envs.env_gym import EnvGym
@@ -24,6 +25,11 @@ class RobomimicWrapper(RolloutPolicy):
         return torch.tensor(self.policy(obs)).to(self.device)[None,...]
 
 class myEnvGym(EnvGym):
+
+    def __init__(self, *args, **kwargs):
+        super(myEnvGym, self).__init__(*args, **kwargs)
+        self._bare_env = self.env
+    
     def get_observation(self, obs=None):
         """
         Get current environment observation dictionary.
@@ -78,3 +84,6 @@ class myEnvGym(EnvGym):
 
     def close(self):
         self.env.close()
+
+    def wrap_with_gym_recorder(self, video_kwargs):
+        self.env = gym.wrappers.RecordVideo(self._bare_env, **video_kwargs)

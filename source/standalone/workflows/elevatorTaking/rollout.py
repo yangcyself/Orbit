@@ -163,6 +163,15 @@ def main():
 
         # reset environment
         obs_dict = env.reset()
+
+        # create environment
+        video_kwargs = {
+            "video_folder": os.path.join(log_dir, "video", f"e_{epoch}"),
+            "step_trigger": lambda step: step == 0,
+            "video_length": 600,
+        }
+        env.wrap_with_gym_recorder(video_kwargs)
+
         # robomimic only cares about policy observations
         # print("Observation",{k: (v.shape, v.shape) for k, v in obs.items()})
         # simulate environment
