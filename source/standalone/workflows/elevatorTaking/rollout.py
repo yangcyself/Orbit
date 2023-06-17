@@ -127,6 +127,9 @@ def main():
         _env_cfg.robot.meta_info.usd_path = env_cfg.robot.meta_info.usd_path
         _env_cfg.marker.usd_path = env_cfg.marker.usd_path
         env_cfg = _env_cfg
+        # Necessary configs for mimic
+        env_cfg.observations.return_dict_obs_in_group = True
+        env_cfg.control.substract_action_from_obs_frame = True
         with open(os.path.join(log_dir, 'rollout_log.txt'), 'r') as logf:
             args_cli.checkpoints = logf.readline().strip()
             done_files = [

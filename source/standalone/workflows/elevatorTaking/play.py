@@ -52,6 +52,7 @@ def main():
     env_cfg.terminations.is_success = "enter_elevator"
     env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
+    env_cfg.control.substract_action_from_obs_frame = True
     env_cfg.control.control_type = "ohneHand"
     env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
     env_cfg.initialization.robot.position_cat = "uniform"
