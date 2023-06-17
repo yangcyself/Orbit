@@ -10,7 +10,7 @@ from omni.isaac.orbit.utils import configclass
 from omni.isaac.orbit.utils.assets import ISAAC_NUCLEUS_DIR
 
 from omni.isaac.orbit_envs.isaac_env_cfg import EnvCfg, IsaacEnvCfg, SimCfg, ViewerCfg
-
+import math
 ##
 # Scene settings
 ##
@@ -50,9 +50,15 @@ class InitializationCfg:
         nonzero_floor_prob = 1.
         max_init_wait_time = 25.
         max_init_floor = 20
+
+    @configclass
+    class SceneCfg:
+        # the range of the random pose of the obs frame
+        obs_frame_bias_range = [40.0, 40.0, math.pi]
     # initialize
     robot: RobotPosCfg = RobotPosCfg()
     elevator: ElevatorStateCfg = ElevatorStateCfg()
+    scene: SceneCfg = SceneCfg()
 
 @configclass
 class ObservationsCfg:
@@ -65,9 +71,9 @@ class ObservationsCfg:
         # global group settings
         enable_corruption: bool = True
         # observation terms
-        dof_pos_normalized = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.01, "max": 0.01}}
-        dof_vel = {"scale": 0.5, "noise": {"name": "uniform", "min": -0.1, "max": 0.1}}
-        ee_position = {}
+        dof_pos_obsframe = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.01, "max": 0.01}}
+        dof_vel_obsframe = {"scale": 0.5, "noise": {"name": "uniform", "min": -0.1, "max": 0.1}}
+        ee_position_obsframe = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.1, "max": 0.1}}
         actions = {}
 
     @configclass
@@ -91,6 +97,7 @@ class ObservationsCfg:
     @configclass
     class DebugCfg:
         debug_info = {}
+        obs_shift_w = {}
 
     # global observation settings
     return_dict_obs_in_group = True
@@ -141,6 +148,7 @@ class ControlCfg:
 
     # action space
     control_type = "ohneHand"  # "default", "inverse_kinematics", "ohneHand"
+    substract_action_from_obs_frame = True
     # decimation: Number of control action updates @ sim dt per policy dt
     decimation = 2
 

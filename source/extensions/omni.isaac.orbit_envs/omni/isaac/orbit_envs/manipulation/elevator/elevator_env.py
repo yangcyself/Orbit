@@ -524,6 +524,12 @@ class ElevatorEnv(IsaacEnv):
         if self.cfg.control.control_type == "inverse_kinematics":
             self._ik_controller.reset_idx(env_ids)
 
+        # -- reset the scene
+        # Fill in the columns with random numbers between range
+        for i in range(3):
+            r = self.cfg.initialization.scene.obs_frame_bias_range[i]
+            self._obs_shift_w[env_ids,i] = ((torch.rand(len(env_ids), )*2*r)-r).to(device=self.device,dtype=torch.float32)
+
     def _step_impl(self, actions: torch.Tensor):
         # pre-step: set actions into buffer
         self.actions = actions.clone().to(device=self.device)
@@ -560,11 +566,17 @@ class ElevatorEnv(IsaacEnv):
                 [cmd_x.unsqueeze(1), cmd_y.unsqueeze(1), self.actions[:, 2].unsqueeze(1)], 1
             )
             # we assume last command is tool action so don't change that
-            self.robot_actions[:, -1] = self.actions[:, -1]
+            self.robot_actions[:, -1] = actions[:, -1]
         elif self.cfg.control.control_type == "default":
-            self.robot_actions[:, :] = self.actions
+            actions = self.actions.clone()
+            if self.cfg.control.substract_action_from_obs_frame:
+                self.obs_pose_substract(actions, vx_idx=0, vy_idx=1)
+            self.robot_actions[:, :] = actions
         elif self.cfg.control.control_type == "ohneHand":
-            self.robot_actions[:, :-1] = self.actions
+            actions = self.actions.clone()
+            if self.cfg.control.substract_action_from_obs_frame:
+                self.obs_pose_substract(actions, vx_idx=0, vy_idx=1)
+            self.robot_actions[:, :-1] = actions
             self.robot_actions[:, -1] = -1.0
         # perform physics stepping
         for _ in range(self.cfg.control.decimation):
@@ -629,6 +641,7 @@ class ElevatorEnv(IsaacEnv):
 
     def get_state(self):
         # Return the underlying state of a simulated environment. Should be compatible with reset_to.
+        obs_shift_w = self._obs_shift_w
         elevator_dofpos = self.elevator.articulations.get_joint_positions(indices=self.elevator.all_mask, clone=True).to(self.device)
         elevator_dofvel = self.elevator.articulations.get_joint_velocities(indices=self.elevator.all_mask, clone=True).to(self.device)
         elevator_state = self.elevator._sm_state.to(self.device)
@@ -636,13 +649,14 @@ class ElevatorEnv(IsaacEnv):
         robot_dofpos = self.robot.articulations.get_joint_positions(indices=self.robot._ALL_INDICES, clone=True).to(self.device) 
         robot_dofvel = self.robot.articulations.get_joint_velocities(indices=self.robot._ALL_INDICES, clone=True).to(self.device) 
         debug_info = self.debug_tracker.to(self.device)
-        return torch.cat([elevator_dofpos, elevator_dofvel, elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel, debug_info], dim=1)
+        return torch.cat([obs_shift_w, elevator_dofpos, elevator_dofvel, elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel, debug_info], dim=1)
 
     def reset_to(self, state):
         # Reset the simulated environment to a given state. Useful for reproducing results
         # state: N x D tensor, where N is the number of environments and D is the dimension of the state
         
         state_should_dims = [0]
+        state_should_dims.append(state_should_dims[-1] + self._obs_shift_w.shape[1])
         state_should_dims.append(state_should_dims[-1] + self.elevator._dof_pos.shape[1])
         state_should_dims.append(state_should_dims[-1] + self.elevator._dof_pos.shape[1]) # dof_vel
         state_should_dims.append(state_should_dims[-1] + self.elevator._sm_state.shape[1])
@@ -651,13 +665,14 @@ class ElevatorEnv(IsaacEnv):
         state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_vel.shape[1])
         state_should_dims.append(state_should_dims[-1] + self.debug_tracker.shape[1])
         assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
-        self.elevator._dof_pos[:,:] = state[:, state_should_dims[0]:state_should_dims[1]].to(self.elevator._dof_pos)
-        _dof_vel = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._dof_pos)
-        self.elevator._sm_state[:,:] = state[:, state_should_dims[2]:state_should_dims[3]].to(self.elevator._sm_state)
-        self.elevator._sm.sm_wait_time[:] = state[:, state_should_dims[3]:state_should_dims[4]].to(self.elevator._sm.sm_wait_time).squeeze(1)
-        self.robot.data.dof_pos[:,:] = state[:, state_should_dims[4]:state_should_dims[5]].to(self.robot.data.dof_pos)
-        self.robot.data.dof_vel[:,:] = state[:, state_should_dims[5]:state_should_dims[6]].to(self.robot.data.dof_vel)
-        self.debug_tracker[:,:] = state[:, state_should_dims[6]:state_should_dims[7]].to(self.debug_tracker)
+        self._obs_shift_w[:,:] = state[:, state_should_dims[0]:state_should_dims[1]].to(self._obs_shift_w)
+        self.elevator._dof_pos[:,:] = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._dof_pos)
+        _dof_vel = state[:, state_should_dims[2]:state_should_dims[3]].to(self.elevator._dof_pos)
+        self.elevator._sm_state[:,:] = state[:, state_should_dims[3]:state_should_dims[4]].to(self.elevator._sm_state)
+        self.elevator._sm.sm_wait_time[:] = state[:, state_should_dims[4]:state_should_dims[5]].to(self.elevator._sm.sm_wait_time).squeeze(1)
+        self.robot.data.dof_pos[:,:] = state[:, state_should_dims[5]:state_should_dims[6]].to(self.robot.data.dof_pos)
+        self.robot.data.dof_vel[:,:] = state[:, state_should_dims[6]:state_should_dims[7]].to(self.robot.data.dof_vel)
+        self.debug_tracker[:,:] = state[:, state_should_dims[7]:state_should_dims[8]].to(self.debug_tracker)
         
         self.elevator.articulations.set_joint_positions(self.elevator._dof_pos, indices=self.elevator.all_mask)
         self.elevator.articulations.set_joint_velocities(_dof_vel, indices=self.elevator.all_mask)
@@ -739,6 +754,11 @@ class ElevatorEnv(IsaacEnv):
         # commands
         self.robot_des_pose_w = torch.zeros((self.num_envs, 3), device=self.device)
 
+        # the transition from the world frame to the frame of the observation
+        ## The robot observation should add this transform
+        ## The robot action should substract this transform
+        self._obs_shift_w = torch.zeros((self.num_envs, 3), device=self.device) # x, y, r
+
     def _debug_vis(self):
         # compute error between end-effector and command
 
@@ -808,6 +828,42 @@ class ElevatorEnv(IsaacEnv):
             success_dict["task"] = success_dict["enter_elevator"]
         return success_dict
 
+
+    def obs_pose_add(self, input_vec, px_idx=None, py_idx=None, pr_idx=None, vx_idx=None, vy_idx=None):
+        """ Add the pose of the observation frame to the observation """
+        x,y,r = self._obs_shift_w[:, 0], self._obs_shift_w[:, 1], self._obs_shift_w[:, 2]
+        if(px_idx is not None and py_idx is not None):
+            ##! the clones are necessary to avoid in-place operations
+            px,py = input_vec[:, px_idx].clone(), input_vec[:, py_idx].clone()
+            input_vec[:, px_idx] = px * torch.cos(r) - py * torch.sin(r)
+            input_vec[:, py_idx] = px * torch.sin(r) + py * torch.cos(r)
+        if(pr_idx is not None):
+            input_vec[:, pr_idx] = r + input_vec[:, pr_idx]
+        if(vx_idx is not None and vy_idx is not None):
+            ##! the clones are necessary to avoid in-place operations
+            vx,vy = input_vec[:, vx_idx].clone(), input_vec[:, vy_idx].clone()
+            input_vec[:, vx_idx] = vx * torch.cos(r) - vy * torch.sin(r)
+            input_vec[:, vy_idx] = vx * torch.sin(r) + vy * torch.cos(r)
+
+
+    def obs_pose_substract(self, input_vec, px_idx=None, py_idx=None, pr_idx=None, vx_idx=None, vy_idx=None):
+        """Minus the pose of the observation frame to the observation """
+        x,y,r = self._obs_shift_w[:, 0], self._obs_shift_w[:, 1], self._obs_shift_w[:, 2]
+        if(px_idx is not None and py_idx is not None):
+            px,py = input_vec[:, px_idx].clone(), input_vec[:, py_idx].clone()
+            input_vec[:, px_idx] = (px - x) * torch.cos(r) + (py - y) * torch.sin(r)
+            input_vec[:, py_idx] = -(px - x) * torch.sin(r) + (py - y) * torch.cos(r)
+        if(pr_idx is not None):
+            input_vec[:, pr_idx] = pr - input_vec[:, pr_idx]
+        if(vx_idx is not None and vy_idx is not None):
+            vx,vy = input_vec[:, vx_idx].clone(), input_vec[:, vy_idx].clone()
+            input_vec[:, vx_idx] = vx * torch.cos(r) + vy * torch.sin(r)
+            input_vec[:, vy_idx] = -vx * torch.sin(r) + vy * torch.cos(r)
+
+    @property
+    def obs_shift_w(self):
+        return self._obs_shift_w
+
 class ElevatorObservationManager(ObservationManager):
     """Reward manager for single-arm reaching environment."""
 
@@ -826,6 +882,28 @@ class ElevatorObservationManager(ObservationManager):
     def ee_position(self, env: ElevatorEnv):
         """Current end-effector position of the arm."""
         return env.robot.data.ee_state_w[:, :3]
+
+    def dof_pos_obsframe(self, env: ElevatorEnv):
+        """DOF positions for the arm in observation frame."""
+        dof_pos = env.robot.data.dof_pos.clone()
+        env.obs_pose_add(dof_pos, px_idx=0, py_idx=1, pr_idx=2)
+        return scale_transform(
+            dof_pos,
+            env.robot.data.soft_dof_pos_limits[:, :, 0],
+            env.robot.data.soft_dof_pos_limits[:, :, 1],
+        )
+    
+    def dof_vel_obsframe(self, env: ElevatorEnv):
+        """DOF velocity for the arm in observation frame."""
+        dof_vel = env.robot.data.dof_vel.clone()
+        env.obs_pose_add(dof_vel, vx_idx=0, vy_idx=1)
+        return dof_vel
+    
+    def ee_position_obsframe(self, env: ElevatorEnv):
+        """Current end-effector position of the arm in observation frame."""
+        ee_pos = env.robot.data.ee_state_w[:,:3].clone()
+        env.obs_pose_add(ee_pos, px_idx=0, py_idx=1)
+        return ee_pos
 
     def elevator_state(self, env: ElevatorEnv):
         """The state of the elevator"""
@@ -860,6 +938,9 @@ class ElevatorObservationManager(ObservationManager):
     
     def debug_info(self, env: ElevatorEnv):
         return env.debug_tracker
+    
+    def obs_shift_w(self, env: ElevatorEnv):
+        return env.obs_shift_w
 
 
 class ElevatorRewardManager(RewardManager):

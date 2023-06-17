@@ -173,17 +173,20 @@ def main():
     env_cfg.initialization.elevator.max_init_floor = 5 # wait for at most 5 seconds
     env_cfg.initialization.elevator.moving_elevator_prob = 0 # wait for at most 5 seconds
     env_cfg.initialization.elevator.nonzero_floor_prob = 1 # wait for at most 5 seconds
-    env_cfg.initialization.robot.position_uniform_min = [1.4, 0.9, -1.6]  # position (x,y,z)
-    env_cfg.initialization.robot.position_uniform_max = [1.6, 1.1, -1.4]  # position (x,y,z)
+    # env_cfg.initialization.robot.position_uniform_min = [1.4, 0.9, -1.6]  # position (x,y,z)
+    # env_cfg.initialization.robot.position_uniform_max = [1.6, 1.1, -1.4]  # position (x,y,z)
     
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = "pushed_btn"
     env_cfg.terminations.collision = True
     env_cfg.observations.return_dict_obs_in_group = True
+    # temp config only for RSLRL collection
+    env_cfg.control.substract_action_from_obs_frame = False
     if args_cli.debug:
-        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"debug"}
+        env_cfg.observations.low_dim.enable_corruption = False
+        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"debug", "low_dim":"low_dim"}
     else:
-        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
+        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "low_dim":"low_dim"}
     EXP_CONFIGS["wrapper_cfg"] = ACTOR_CONFIGS[EXP_CONFIGS["actor_type"]]
     if(EXP_CONFIGS["actor_type"] == "human"):    
         # Set wrapper config
@@ -255,7 +258,9 @@ def main():
                 actions += EXP_CONFIGS["apply_action_noise"] * torch.randn_like(actions)
 
             # -- actions
-            collector_interface.add("actions", actions)
+            actions_to_collect = actions.clone()
+            env.obs_pose_add(actions_to_collect, vx_idx=0, vy_idx=1)
+            collector_interface.add("actions", actions_to_collect)
             # perform action on environment
             obs, rewards, dones, info = env.step(actions)
             # check that simulation is stopped or not

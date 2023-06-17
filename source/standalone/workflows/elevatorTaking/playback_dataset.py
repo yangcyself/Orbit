@@ -173,6 +173,7 @@ from torch.utils.data import DataLoader
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
+from omni.isaac.orbit.utils.io import load_pickle
 
 sys.path.append(os.path.dirname(__file__))
 from utils.mimic_utils import RobomimicWrapper, myEnvGym
@@ -422,21 +423,14 @@ def playback_dataset(args):
         # env = EnvUtils.create_env_from_metadata(env_meta=env_meta, render=args.render, render_offscreen=write_video)
         print("making env!!")
         env_cfg = parse_env_cfg("Isaac-Elevator-Franka-v0", use_gpu=False, num_envs=1)
-        env_cfg.env.episode_length_s = 20.
-        env_cfg.initialization.elevator.max_init_floor = 5 # wait for at most 5 seconds
-        env_cfg.initialization.elevator.moving_elevator_prob = 0 # wait for at most 5 seconds
-        env_cfg.initialization.elevator.nonzero_floor_prob = 1 # wait for at most 5 seconds
-        env_cfg.initialization.robot.position_uniform_min = [1.4, 0.9, 1.6]  # position (x,y,z)
-        env_cfg.initialization.robot.position_uniform_max = [1.6, 1.1, 1.4]  # position (x,y,z)
-        
-        env_cfg.terminations.episode_timeout = True
-        env_cfg.terminations.is_success = "pushed_btn"
-        env_cfg.terminations.collision = True
+        _env_cfg = load_pickle(os.path.join(os.path.dirname(args.dataset), "params", "env.pkl"))
+        # These two paths sometimes changes between http://omniverse-content-productionxxxxx and omniverse://localhost/N
+        _env_cfg.robot.meta_info.usd_path = env_cfg.robot.meta_info.usd_path
+        _env_cfg.marker.usd_path = env_cfg.marker.usd_path
+        env_cfg = _env_cfg
+        # Necessary configs for mimic
         env_cfg.observations.return_dict_obs_in_group = True
-        if(args.debug):
-            env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"debug"}
-        else:
-            env_cfg.observation_grouping = {"policy":"privilege", "rgb":None}
+        env_cfg.control.substract_action_from_obs_frame = True
 
         # env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
         env = myEnvGym("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)

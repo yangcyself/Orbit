@@ -30,7 +30,7 @@ simulation_app = SimulationApp(config)
 
 import gym
 import torch
-
+import sys
 import carb
 
 from omni.isaac.orbit.devices import Se2Keyboard, Se3Gamepad
@@ -41,7 +41,7 @@ from omni.isaac.orbit_envs.utils import parse_env_cfg
 
 
 CHECK_SAME_OBS_REWARD = False
-PRINT_REWARD_BREAKDOWN = True
+PRINT_REWARD_BREAKDOWN = False
 
 def pre_process_actions(base_vel: torch.Tensor, delta_pose: torch.Tensor, gripper_command: bool) -> torch.Tensor:
     """Pre-process actions for the environment."""
@@ -50,6 +50,31 @@ def pre_process_actions(base_vel: torch.Tensor, delta_pose: torch.Tensor, grippe
     gripper_vel[:] = -1.0 if gripper_command else 1.0
     # compute actions
     return torch.concat([base_vel, delta_pose, gripper_vel], dim=1)
+
+
+def update_terminal_table(data_dict, num_prev_lines=0):
+    """
+    Updates a table on the terminal with the provided data.
+    
+    :param data_dict: Dictionary where keys are labels and values are the data.
+    :param num_prev_lines: The number of lines in the table from the previous call.
+    :return: The number of lines printed in this call.
+    """
+    
+    # Move cursor up for the number of previously printed lines
+    for _ in range(num_prev_lines):
+        sys.stdout.write('\033[F')
+        sys.stdout.flush()
+    
+    # Print the current lines
+    lines_printed = 0
+    for label, value in data_dict.items():
+        print(f"\r{label}: {value}", end='', flush=True)
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+        lines_printed += 1
+    
+    return lines_printed
 
 
 def main():
@@ -61,8 +86,9 @@ def main():
     env_cfg.control.inverse_kinematics.command_type = "pose_rel"
     env_cfg.terminations.episode_timeout = False
     env_cfg.terminations.is_success = False
+    env_cfg.low_dim.enable_corruption=False
     if CHECK_SAME_OBS_REWARD:
-        env_cfg.observation_grouping = {"privilege":None}
+        env_cfg.observation_grouping = {"privilege":None, "low_dim":None, "debug": None}
         env_cfg.observations.return_dict_obs_in_group = True
         env_cfg.num_envs = 2
         # disable any randomness in initialization
@@ -70,8 +96,9 @@ def main():
         env_cfg.initialization.elevator.moving_elevator_prob = -1 #set to -1 for close door, set to 2 for wait elevator
         env_cfg.initialization.elevator.nonzero_floor_prob = -1
         env_cfg.initialization.elevator.max_init_wait_time = 0
+        env_cfg.initialization.scene.obs_frame_bias_range = [0,0,0]
     else:
-        env_cfg.observation_grouping = {"rgb":None,"privilege":None}
+        env_cfg.observation_grouping = {"rgb":None,"privilege":None, "low_dim":None, "debug": None}
         env_cfg.initialization.elevator.moving_elevator_prob = -1
         env_cfg.initialization.elevator.nonzero_floor_prob = -1
         env_cfg.initialization.elevator.max_init_wait_time = 0
@@ -110,6 +137,7 @@ def main():
     episodic_rewards = {k:v.clone() for k,v in env.reward_manager.episode_sums.items()}
     step_rewards = {k:0 for k,v in env.reward_manager.episode_sums.items()}
 
+    num_prev_lines = 0
     # simulate environment
     while simulation_app.is_running():
         # get keyboard command
@@ -127,6 +155,14 @@ def main():
             step_rewards[k] = v - episodic_rewards[k]
             episodic_rewards[k] = v.clone()
 
+        print_info_dict = {
+            "pos_obs": obs["low_dim"]["dof_pos_obsframe"][0,[0,1,2]].numpy(),
+            "vel_obs": [(obs["low_dim"]["dof_vel_obsframe"][0,:2]**2).sum(),  obs["low_dim"]["dof_vel_obsframe"][0,[0,1,2]].numpy(),],
+            "pos_w": obs["privilege"]["dof_pos_normalized"][0,[0,1,2]].numpy(),
+            "vel_w": [(obs["privilege"]["dof_vel"][0,:2]**2).sum(), obs["privilege"]["dof_vel"][0,[0,1,2]].numpy(),],
+            "obs_shift_w": obs["debug"]["obs_shift_w"][0,[0,1,2]].numpy()
+        }
+        
         if(CHECK_SAME_OBS_REWARD):
             for kk,vv in obs.items():
                 for k,v in vv.items():
@@ -142,11 +178,11 @@ def main():
             break
         
         if (PRINT_REWARD_BREAKDOWN):
-            print("#### elevator_state", obs["privilege"]["elevator_state"])
-            print("#### elevator_is_zerofloor", obs["privilege"]["elevator_is_zerofloor"])
-            for k,v in step_rewards.items():
-                print(f"{k}: ", v)
+            print_info_dict.update({"elevator_state": obs["privilege"]["elevator_state"]})
+            print_info_dict.update({"elevator_is_zerofloor": obs["privilege"]["elevator_is_zerofloor"]})
+            print_info_dict.update(step_rewards)
 
+        num_prev_lines = update_terminal_table(print_info_dict, num_prev_lines)
     # close the simulator
     env.close()
     simulation_app.close()
