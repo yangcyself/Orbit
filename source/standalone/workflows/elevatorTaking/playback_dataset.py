@@ -355,7 +355,7 @@ def get_iterator_from_dataset(args):
 
 
 def get_iterator_from_dataloader(args):
-    config = config_factory("ycy")
+    config = config_factory("iad")
     ext_cfg = json.load(open(args.cfg, 'r'))
     with config.values_unlocked():
         config.update(ext_cfg)

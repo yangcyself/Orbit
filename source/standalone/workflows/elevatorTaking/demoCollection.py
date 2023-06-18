@@ -173,8 +173,7 @@ def main():
     env_cfg.initialization.elevator.max_init_floor = 5 # wait for at most 5 seconds
     env_cfg.initialization.elevator.moving_elevator_prob = 0 # wait for at most 5 seconds
     env_cfg.initialization.elevator.nonzero_floor_prob = 1 # wait for at most 5 seconds
-    # env_cfg.initialization.robot.position_uniform_min = [1.4, 0.9, -1.6]  # position (x,y,z)
-    # env_cfg.initialization.robot.position_uniform_max = [1.6, 1.1, -1.4]  # position (x,y,z)
+
     
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = "pushed_btn"
