@@ -864,6 +864,39 @@ class ElevatorEnv(IsaacEnv):
     def obs_shift_w(self):
         return self._obs_shift_w
 
+
+    # overwrite the render function of the base env
+    # concatenat the camera observation desides its viewpoint
+    def render(self, mode: str = "human") -> Optional[np.ndarray]:
+        """Run rendering without stepping through the physics.
+
+        By convention, if mode is:
+
+        - **human**: render to the current display and return nothing. Usually for human consumption.
+        - **rgb_array**: Return an numpy.ndarray with shape (x, y, 3), representing RGB values for an
+            x-by-y pixel image, suitable for turning into a video.
+
+        Args:
+            mode (str, optional): The mode to render with. Defaults to "human".
+        """
+        rgb_data = super(ElevatorEnv, self).render(mode)
+        if(mode == "rgb_array" and self.camera is not None):
+            assert rgb_data is not None
+            cam_data = (wp.torch.to_torch(self.camera.data.output["rgb"])[:, :, :3]).to(self.device).numpy()
+            # Calculate the height difference
+            height_diff = rgb_data.shape[0] - cam_data.shape[0]
+            # Pad the smaller image with zeros at the bottom
+            if height_diff > 0: # img1 is taller
+                padding = ((0, height_diff), (0, 0), (0, 0))
+                cam_data = np.pad(cam_data, padding, mode='constant')
+            elif height_diff < 0: # img2 is taller
+                padding = ((0, -height_diff), (0, 0), (0, 0))
+                rgb_data = np.pad(rgb_data, padding, mode='constant')
+            
+            # Concatenate the images horizontally
+            rgb_data = np.concatenate((rgb_data, cam_data), axis=1)
+        return rgb_data
+
 class ElevatorObservationManager(ObservationManager):
     """Reward manager for single-arm reaching environment."""
 
