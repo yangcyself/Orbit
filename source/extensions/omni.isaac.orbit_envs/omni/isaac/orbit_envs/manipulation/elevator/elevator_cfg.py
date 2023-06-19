@@ -7,7 +7,7 @@ from omni.isaac.orbit.controllers.differential_inverse_kinematics import Differe
 from omni.isaac.orbit.robots.config.ridgeback_franka import RIDGEBACK_FRANKA_PANDA_CFG
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulatorCfg
 from omni.isaac.orbit.utils import configclass
-from omni.isaac.orbit.utils.assets import ISAAC_NUCLEUS_DIR
+from omni.isaac.orbit.utils.assets import ISAAC_NUCLEUS_DIR, ASSET_NUCLEUS_DIR
 
 from omni.isaac.orbit_envs.isaac_env_cfg import EnvCfg, IsaacEnvCfg, SimCfg, ViewerCfg
 import math
@@ -55,6 +55,25 @@ class InitializationCfg:
     class SceneCfg:
         # the range of the random pose of the obs frame
         obs_frame_bias_range = [40.0, 40.0, math.pi]
+        enable_replicator = True
+        randomize_ground_materials = [
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/Base/Masonry/Concrete_Rough.mdl",
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/Base/Masonry/Concrete_Polished.mdl",
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/Base/Stone/Slate.mdl",
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/Base/Stone/Retaining_Block.mdl",
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/Base/Stone/Retaining_Block.mdl",
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/Base/Stone/Granite_Light.mdl"
+        ]
+        randomize_wall_materials = [
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/Base/Masonry/Stucco.mdl",
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/vMaterials_2/Concrete/Concrete_Wall_Aged.mdl",
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/vMaterials_2/Concrete/Concrete_Wall_Even.mdl"
+        ]
+        randomize_door_materials = [
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/vMaterials_2/Metal/Zinc_Brushed.mdl",
+            f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/vMaterials_2/Metal/Iron_Brushed.mdl"            
+        ]
+
     # initialize
     robot: RobotPosCfg = RobotPosCfg()
     elevator: ElevatorStateCfg = ElevatorStateCfg()

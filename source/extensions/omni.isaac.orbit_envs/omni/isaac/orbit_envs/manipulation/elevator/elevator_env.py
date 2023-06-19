@@ -34,6 +34,9 @@ from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
 from omni.isaac.assets import ASSETS_DATA_DIR
 from .elevator_cfg import ElevatorEnvCfg
 
+# replicator
+import omni.replicator.core as rep
+
 # import omni.isaac.orbit_envs  # noqa: F401
 # from omni.isaac.orbit_envs.utils.parse_cfg import parse_env_cfg
 
@@ -525,10 +528,24 @@ class ElevatorEnv(IsaacEnv):
             self._ik_controller.reset_idx(env_ids)
 
         # -- reset the scene
-        # Fill in the columns with random numbers between range
         for i in range(3):
             r = self.cfg.initialization.scene.obs_frame_bias_range[i]
             self._obs_shift_w[env_ids,i] = ((torch.rand(len(env_ids), )*2*r)-r).to(device=self.device,dtype=torch.float32)
+
+        # -- reset textures and materials with replicator
+
+        ## Replicator related code
+        if self.cfg.initialization.scene.enable_replicator:
+            if self.cfg.initialization.scene.randomize_ground_materials is not None:
+                assert self.num_envs == 1, "randomize ground material only supports single environment"
+                with rep.get.prims(path_pattern = "/World/defaultGroundPlane"):
+                    rep.randomizer.materials(self.cfg.initialization.scene.randomize_ground_materials)
+            if self.cfg.initialization.scene.randomize_wall_materials is not None:
+                with rep.get.prims(path_pattern = self.env_ns + "/.*/Elevator/wall"):
+                    rep.randomizer.materials(self.cfg.initialization.scene.randomize_wall_materials)
+            if self.cfg.initialization.scene.randomize_door_materials is not None:
+                with rep.get.prims(path_pattern = self.env_ns + "/.*/Elevator/.*sideDoor"):
+                    rep.randomizer.materials(self.cfg.initialization.scene.randomize_door_materials)
 
     def _step_impl(self, actions: torch.Tensor):
         # pre-step: set actions into buffer
