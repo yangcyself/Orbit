@@ -222,3 +222,4 @@ class ElevatorEnvCfg(IsaacEnvCfg):
     # workflow settings
     # A list of tuples {group_name: [list of observation names]} to be used for observation grouping
     observation_grouping = {}
+    spawn_goal_camera = True

@@ -54,6 +54,9 @@ from rslrl_config import parse_rslrl_cfg
 from omni.isaac.orbit_envs.utils import get_checkpoint_path, parse_env_cfg
 from omni.isaac.orbit_envs.utils.wrappers.rsl_rl import RslRlVecEnvWrapper, export_policy_as_onnx
 
+# Replicator
+import omni.replicator.core as rep
+
 # Default arguments for actor wrappers
 ACTOR_CONFIGS = {
     "rslrl": {
@@ -236,6 +239,11 @@ def main():
 
     # # reset interfaces
     collector_interface.reset()
+
+    goal_image = env.random_goal_image().detach().cpu().numpy().squeeze(0)
+    import matplotlib.pyplot as plt
+    plt.imshow(goal_image)
+    plt.show()
 
     # simulate environment
     with contextlib.suppress(KeyboardInterrupt):

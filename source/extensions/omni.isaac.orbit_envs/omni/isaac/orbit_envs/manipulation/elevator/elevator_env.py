@@ -374,8 +374,6 @@ class ElevatorEnv(IsaacEnv):
         if("rgb" in self.modalities):
             camera_cfg = PinholeCameraCfg(
                 sensor_tick=0,
-                # height=480,
-                # width=640,
                 height=128,
                 width=128,
                 data_types=["rgb", "semantic_segmentation"],
@@ -384,6 +382,19 @@ class ElevatorEnv(IsaacEnv):
                 ),
             )
             self.camera = Camera(cfg=camera_cfg, device="cuda")
+            if(self.cfg.spawn_goal_camera):
+                goal_camera_cfg = PinholeCameraCfg(
+                    sensor_tick=0,
+                    height=480,
+                    width=640,
+                    data_types=["rgb", "semantic_segmentation"],
+                    usd_params=PinholeCameraCfg.UsdCameraCfg(
+                        focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+                    ),
+                )
+                self.goal_camera = Camera(cfg=goal_camera_cfg, device="cuda")
+            else:
+                self.goal_camera = None
         else:
             self.camera = None
 
@@ -469,6 +480,12 @@ class ElevatorEnv(IsaacEnv):
                 self.template_env_ns + "/Robot/panda_hand" + "/CameraSensor",
                 translation=(0.05, 0.005, -0.01),
                 orientation=(0.0616284, 0.704416, 0.704416, 0.0616284),
+            )
+        if(self.goal_camera is not None):
+            self.goal_camera.spawn(
+                self.template_env_ns + "/CameraSensor",
+                translation=(0, 0, 0),
+                orientation=(1, 0, 0, 0),
             )
 
         # setup debug visualization
@@ -750,6 +767,8 @@ class ElevatorEnv(IsaacEnv):
         if(self.camera is not None):
             self.camera.initialize()
         # self.camera.initialize(self.env_ns + "/.*/Robot/panda_hand/CameraSensor/Camera")
+        if(self.goal_camera is not None):
+            self.goal_camera.initialize()
 
         # create controller
         if self.cfg.control.control_type == "inverse_kinematics":
@@ -913,6 +932,17 @@ class ElevatorEnv(IsaacEnv):
             # Concatenate the images horizontally
             rgb_data = np.concatenate((rgb_data, cam_data), axis=1)
         return rgb_data
+
+    def random_goal_image(self):
+        ## Replicator related code
+        assert self.num_envs == 1, "randomize goal image only support one environment"
+        with rep.get.camera(path_pattern = self.env_ns + "/.*/CameraSensor"):
+            rep.randomizer.rotation()
+
+        if(self.goal_camera is not None): # update to get a new picture
+            self.goal_camera.update(dt=self.dt)
+        return (wp.torch.to_torch(self.goal_camera.data.output["rgb"])[None, :, :, :3]).to(self.device)
+        
 
 class ElevatorObservationManager(ObservationManager):
     """Reward manager for single-arm reaching environment."""
