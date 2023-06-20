@@ -54,9 +54,6 @@ from rslrl_config import parse_rslrl_cfg
 from omni.isaac.orbit_envs.utils import get_checkpoint_path, parse_env_cfg
 from omni.isaac.orbit_envs.utils.wrappers.rsl_rl import RslRlVecEnvWrapper, export_policy_as_onnx
 
-# Replicator
-import omni.replicator.core as rep
-
 # Default arguments for actor wrappers
 ACTOR_CONFIGS = {
     "rslrl": {
@@ -235,15 +232,12 @@ def main():
     # reset environment
     # obs_dict = env.reset()
     obs = env.reset()
+    goal_dict = env.random_goal_image()
     obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 
     # # reset interfaces
     collector_interface.reset()
 
-    goal_image = env.random_goal_image().detach().cpu().numpy().squeeze(0)
-    import matplotlib.pyplot as plt
-    plt.imshow(goal_image)
-    plt.show()
 
     # simulate environment
     with contextlib.suppress(KeyboardInterrupt):
@@ -255,6 +249,8 @@ def main():
             for key, value in obs_mimic.items():
                 collector_interface.add(f"obs/{key}", value)
             
+            for key, value in goal_dict.items():
+                collector_interface.add(f"goal/{key}", value)
             # -- states
             states = env.get_state()
             collector_interface.add("states", states.cpu().numpy())
@@ -310,6 +306,7 @@ def main():
                 print("Resetting envs")
                 env.reset_idx(done_env_ids)
                 env.reset_buf[done_env_ids] = 0.
+                goal_dict = env.random_goal_image()
                 obs = env.get_observations()
                 obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 

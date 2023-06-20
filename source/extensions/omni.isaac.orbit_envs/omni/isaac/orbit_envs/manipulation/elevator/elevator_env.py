@@ -27,7 +27,8 @@ from omni.isaac.orbit.markers import PointMarker, StaticMarker
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
 from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
 from omni.isaac.orbit.utils.dict import class_to_dict
-from omni.isaac.orbit.utils.math import quat_apply, quat_mul, scale_transform, sample_uniform, matrix_from_quat
+from omni.isaac.orbit.utils.math import quat_apply, quat_mul, scale_transform, sample_uniform, matrix_from_quat, \
+    combine_frame_transforms, quat_from_euler_xyz
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
 
 from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
@@ -936,12 +937,52 @@ class ElevatorEnv(IsaacEnv):
     def random_goal_image(self):
         ## Replicator related code
         assert self.num_envs == 1, "randomize goal image only support one environment"
-        with rep.get.camera(path_pattern = self.env_ns + "/.*/CameraSensor"):
-            rep.randomizer.rotation()
+        assert self.goal_camera is not None, "goal camera is not set"
+        # the points: x,y, ry that are make sure the button are contained in the camera view
+        eye = torch.rand(3) * torch.tensor([6., 5., 0.4]) + torch.tensor([-2, 3., 0.3])
+        target = torch.rand(3) * torch.tensor([1., 1., 0.2]) + torch.tensor([0.5, -1, 0.4])
+        prim = prim_utils.get_prim_at_path(self.robot._spawn_prim_path)
+        prim_utils.set_prim_visibility(prim, visible=False)
+        self.goal_camera.set_world_pose_from_view(eye = eye, target = target)
+        self.sim.step()
+        self.goal_camera.update(dt=self.dt)
+        self.goal_camera.set_world_pose_from_view(eye = eye, target = target)
+        self.sim.step()
+        self.goal_camera.update(dt=self.dt)
+        prim_utils.set_prim_visibility(prim, visible=True)
+        
+        # Process the semantic segmentation data
+        class_names = self.cfg.observations.semantic.hand_camera_semantic["class_names"]
+        idToLabels = self.goal_camera.data.output["semantic_segmentation"]['info']["idToLabels"]
+        labelToIds = {label["class"]: int(idx) for idx, label in idToLabels.items()}
+        data = wp.torch.to_torch(self.goal_camera.data.output["semantic_segmentation"]['data'])[None, :, :].squeeze(3) # n_env, H, W
+        channels = []
+        for labels in class_names:
+            # Combine binary masks for each label in the group
+            binary_mask = torch.zeros_like(data, dtype=torch.bool)
+            for label in labels:
+                idx = labelToIds.get(label)
+                if idx is not None:
+                    binary_mask = binary_mask | (data == idx)
+            # Append to the list
+            channels.append(binary_mask)
+        segment = torch.stack(channels,dim=3).to(self.device) # n_env, H, W, C
 
-        if(self.goal_camera is not None): # update to get a new picture
-            self.goal_camera.update(dt=self.dt)
-        return (wp.torch.to_torch(self.goal_camera.data.output["rgb"])[None, :, :, :3]).to(self.device)
+        # Camera pose
+        campos, camrot = self.goal_camera._data.position, self.goal_camera._data.orientation 
+        _zero_vec = torch.zeros((self.num_envs,)).to(self._obs_shift_w)
+        new_campos, new_camrot = combine_frame_transforms(
+                torch.cat([self._obs_shift_w[:,:2],_zero_vec.unsqueeze(0)], dim=1) ,
+                quat_from_euler_xyz(_zero_vec, _zero_vec, self._obs_shift_w[:, 2]),
+                torch.tensor(campos).unsqueeze(0).to(self._obs_shift_w), 
+                torch.tensor(camrot).unsqueeze(0).to(self._obs_shift_w))
+        return_dict = {
+            "rgb": wp.torch.to_torch(self.goal_camera.data.output["rgb"])[None, :, :, :3].to(self.device),
+            "semantic": segment,
+            "campos": new_campos,
+            "camrot": new_camrot
+        }
+        return return_dict
         
 
 class ElevatorObservationManager(ObservationManager):
