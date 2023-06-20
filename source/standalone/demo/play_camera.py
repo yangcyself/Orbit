@@ -119,7 +119,7 @@ def main():
         sensor_tick=0,
         height=480,
         width=640,
-        data_types=["rgb", "distance_to_image_plane", "normals", "motion_vectors"],
+        data_types=["rgb", "distance_to_image_plane", "normals", "motion_vectors", "semantic_segmentation"],
         usd_params=PinholeCameraCfg.UsdCameraCfg(
             focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
         ),
@@ -170,6 +170,7 @@ def main():
         print(camera)
         print("Received shape of rgb   image: ", camera.data.output["rgb"].shape)
         print("Received shape of depth image: ", camera.data.output["distance_to_image_plane"].shape)
+        print("Received shape of semantic_segmentation:    ", camera.data.output["semantic_segmentation"])
         print("-------------------------------")
 
         # Save images

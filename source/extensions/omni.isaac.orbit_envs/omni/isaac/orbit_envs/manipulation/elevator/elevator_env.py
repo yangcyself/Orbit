@@ -378,7 +378,7 @@ class ElevatorEnv(IsaacEnv):
                 # width=640,
                 height=128,
                 width=128,
-                data_types=["rgb"],
+                data_types=["rgb", "semantic_segmentation"],
                 usd_params=PinholeCameraCfg.UsdCameraCfg(
                     focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
                 ),
@@ -981,6 +981,18 @@ class ElevatorObservationManager(ObservationManager):
             return torch.zeros((env.num_envs, image_shape[0], image_shape[1], 3), device=env.device)
         else:
             return (wp.torch.to_torch(env.camera.data.output["rgb"])[None, :, :, :3]).to(env.device)
+
+    def hand_camera_semantic(self, env: ElevatorEnv, class_names=None):
+        """Semantic camera observations.
+        type uint8 and be stored in channel-last (H, W, C) format.
+        """
+        class_names = [] if class_names is None else class_names
+        num_classes = len(class_names)
+        image_shape = env.camera.image_shape
+        if env.camera.data.output["semantic_segmentation"] is None:
+            return torch.zeros((env.num_envs, image_shape[0], image_shape[1], num_classes), device=env.device)
+        else:
+            return (wp.torch.to_torch(env.camera.data.output["semantic_segmentation"]['data'])[None, :, :, :num_classes]).to(env.device)
 
     def actions(self, env: ElevatorEnv):
         """Last actions provided to env."""

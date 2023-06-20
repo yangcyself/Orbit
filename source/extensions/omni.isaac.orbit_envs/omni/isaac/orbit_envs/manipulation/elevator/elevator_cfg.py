@@ -112,7 +112,11 @@ class ObservationsCfg:
     @configclass
     class RGBCfg:
         hand_camera_rgb = {}
-    
+
+    @configclass
+    class SemanticCfg:
+        hand_camera_semantic = {"class_names":[1]}
+
     @configclass
     class DebugCfg:
         debug_info = {}
@@ -126,6 +130,7 @@ class ObservationsCfg:
     debug: DebugCfg = DebugCfg()
     rgb: RGBCfg = RGBCfg()
     privilege: PrivilegeCfg = PrivilegeCfg()
+    semantic: SemanticCfg = SemanticCfg()
 
 
 @configclass

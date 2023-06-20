@@ -86,7 +86,7 @@ def main():
     env_cfg.control.inverse_kinematics.command_type = "pose_rel"
     env_cfg.terminations.episode_timeout = False
     env_cfg.terminations.is_success = False
-    env_cfg.low_dim.enable_corruption=False
+    env_cfg.observations.low_dim.enable_corruption=False
     if CHECK_SAME_OBS_REWARD:
         env_cfg.observation_grouping = {"privilege":None, "low_dim":None, "debug": None}
         env_cfg.observations.return_dict_obs_in_group = True
@@ -98,7 +98,7 @@ def main():
         env_cfg.initialization.elevator.max_init_wait_time = 0
         env_cfg.initialization.scene.obs_frame_bias_range = [0,0,0]
     else:
-        env_cfg.observation_grouping = {"rgb":None,"privilege":None, "low_dim":None, "debug": None}
+        env_cfg.observation_grouping = {"rgb":None,"privilege":None, "low_dim":None, "debug": None, "semantic":None}
         env_cfg.initialization.elevator.moving_elevator_prob = -1
         env_cfg.initialization.elevator.nonzero_floor_prob = -1
         env_cfg.initialization.elevator.max_init_wait_time = 0
@@ -156,11 +156,10 @@ def main():
             episodic_rewards[k] = v.clone()
 
         print_info_dict = {
-            "pos_obs": obs["low_dim"]["dof_pos_obsframe"][0,[0,1,2]].numpy(),
-            "vel_obs": [(obs["low_dim"]["dof_vel_obsframe"][0,:2]**2).sum(),  obs["low_dim"]["dof_vel_obsframe"][0,[0,1,2]].numpy(),],
-            "pos_w": obs["privilege"]["dof_pos_normalized"][0,[0,1,2]].numpy(),
-            "vel_w": [(obs["privilege"]["dof_vel"][0,:2]**2).sum(), obs["privilege"]["dof_vel"][0,[0,1,2]].numpy(),],
-            "obs_shift_w": obs["debug"]["obs_shift_w"][0,[0,1,2]].numpy()
+            "semantic": (
+                obs["semantic"]["hand_camera_semantic"][0].dtype,
+                obs["semantic"]["hand_camera_semantic"][0].max(),
+                obs["semantic"]["hand_camera_semantic"][0].min())
         }
         
         if(CHECK_SAME_OBS_REWARD):
