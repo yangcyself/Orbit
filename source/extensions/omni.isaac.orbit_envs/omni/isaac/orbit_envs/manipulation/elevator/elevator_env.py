@@ -985,14 +985,29 @@ class ElevatorObservationManager(ObservationManager):
     def hand_camera_semantic(self, env: ElevatorEnv, class_names=None):
         """Semantic camera observations.
         type uint8 and be stored in channel-last (H, W, C) format.
+        class_names: a list of tuples, each tuple contains the names for the channel of the output
         """
         class_names = [] if class_names is None else class_names
         num_classes = len(class_names)
         image_shape = env.camera.image_shape
         if env.camera.data.output["semantic_segmentation"] is None:
-            return torch.zeros((env.num_envs, image_shape[0], image_shape[1], num_classes), device=env.device)
+            return torch.zeros((env.num_envs, image_shape[0], image_shape[1], num_classes), dtype=torch.bool, device=env.device)
         else:
-            return (wp.torch.to_torch(env.camera.data.output["semantic_segmentation"]['data'])[None, :, :, :num_classes]).to(env.device)
+            idToLabels = env.camera.data.output["semantic_segmentation"]['info']["idToLabels"]
+            labelToIds = {label["class"]: int(idx) for idx, label in idToLabels.items()}
+            data = wp.torch.to_torch(env.camera.data.output["semantic_segmentation"]['data'])[None, :, :].squeeze(3) # n_env, H, W
+            channels = []
+            for labels in class_names:
+                # Combine binary masks for each label in the group
+                binary_mask = torch.zeros_like(data, dtype=torch.bool)
+                for label in labels:
+                    idx = labelToIds.get(label)
+                    if idx is not None:
+                        binary_mask = binary_mask | (data == idx)
+                # Append to the list
+                channels.append(binary_mask)
+            return torch.stack(channels,dim=3).to(env.device) # n_env, H, W, C
+
 
     def actions(self, env: ElevatorEnv):
         """Last actions provided to env."""

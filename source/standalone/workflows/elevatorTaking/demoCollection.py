@@ -183,9 +183,9 @@ def main():
     env_cfg.control.substract_action_from_obs_frame = False
     if args_cli.debug:
         env_cfg.observations.low_dim.enable_corruption = False
-        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"debug", "low_dim":"low_dim"}
+        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"debug", "low_dim":"low_dim", "semantic":None}
     else:
-        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "low_dim":"low_dim"}
+        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "low_dim":"low_dim", "semantic":None}
     EXP_CONFIGS["wrapper_cfg"] = ACTOR_CONFIGS[EXP_CONFIGS["actor_type"]]
     if(EXP_CONFIGS["actor_type"] == "human"):    
         # Set wrapper config
