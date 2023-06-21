@@ -163,7 +163,6 @@ class HumanActor(ActorWrapperBase):
         return pre_process_actions(base_cmd, delta_pose, gripper_command)
         
 
-
 def main():
     """Collect demonstrations from the environment using teleop interfaces."""
     # parse configuration
@@ -237,7 +236,8 @@ def main():
 
     # # reset interfaces
     collector_interface.reset()
-
+    for key, value in goal_dict.items():
+        collector_interface.add(f"obs/goal:{key}", value)
 
     # simulate environment
     with contextlib.suppress(KeyboardInterrupt):
@@ -249,8 +249,6 @@ def main():
             for key, value in obs_mimic.items():
                 collector_interface.add(f"obs/{key}", value)
             
-            for key, value in goal_dict.items():
-                collector_interface.add(f"obs/goal:{key}", value)
             # -- states
             states = env.get_state()
             collector_interface.add("states", states.cpu().numpy())
@@ -314,7 +312,8 @@ def main():
                 obs = env.get_observations()
                 obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 
-
+                for key, value in goal_dict.items():
+                    collector_interface.add(f"obs/goal:{key}", value)
 
     # close the simulator
     collector_interface.close()
