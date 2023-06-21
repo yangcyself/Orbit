@@ -125,6 +125,22 @@ class ObservationsCfg:
         debug_info = {}
         obs_shift_w = {}
 
+    @configclass
+    class GoalCfg:
+        """
+        This is quite different from the other observations.
+        It is a fixed obs over the whole episode. And getting it takes heavy computation.
+        By specifying the cfg here, it load the cached value from @random_goal_image every step .
+        However, for the sake of storage, disable this and use the @random_goal_image in demoCollection.
+        """
+        goal_rgb = {}
+        goal_semantic = {}
+
+    @configclass
+    class GoalLowdimCfg:
+        goal_campos = {}
+        goal_camrot = {}
+
     # global observation settings
     return_dict_obs_in_group = True
     """Whether to return observations as dictionary or flattened vector within groups."""
@@ -134,7 +150,8 @@ class ObservationsCfg:
     rgb: RGBCfg = RGBCfg()
     privilege: PrivilegeCfg = PrivilegeCfg()
     semantic: SemanticCfg = SemanticCfg()
-
+    goal: GoalCfg = GoalCfg()
+    goal_lowdim: GoalLowdimCfg = GoalLowdimCfg()
 
 @configclass
 class RewardsCfg:

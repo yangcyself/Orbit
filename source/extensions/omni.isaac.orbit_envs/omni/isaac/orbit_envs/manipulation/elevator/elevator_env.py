@@ -567,6 +567,10 @@ class ElevatorEnv(IsaacEnv):
             for i in range(5):
                 self.sim.step()
 
+        ## update the goal dict if it is in observation
+        if "goal" in self.modalities:
+            self.goal_dict.update(self.random_goal_image())
+
     def _step_impl(self, actions: torch.Tensor):
         # pre-step: set actions into buffer
         self.actions = actions.clone().to(device=self.device)
@@ -669,7 +673,7 @@ class ElevatorEnv(IsaacEnv):
         obs_dict = {}
         for k,v in self.cfg.observation_grouping.items():
             if(type(v) == list):
-                obs_dict[k] = {k2: obs[k2] for k2 in v}
+                obs_dict[k] = {k3: obs[k2][k3] for k2 in v for k3 in obs[k2].keys()}
             elif(type(v) == str):
                 obs_dict[k] = obs[v]
             else:
@@ -797,6 +801,17 @@ class ElevatorEnv(IsaacEnv):
         ## The robot observation should add this transform
         ## The robot action should substract this transform
         self._obs_shift_w = torch.zeros((self.num_envs, 3), device=self.device) # x, y, r
+
+        # The Buffer for goal observation
+        ## Will be updated by @random_goal_image and queriedy as obs in goal group
+        if "goal" in self.modalities:
+            class_names = self.cfg.observations.semantic.hand_camera_semantic["class_names"]
+            self.goal_dict = {
+                "rgb": torch.zeros((self.num_envs, *self.goal_camera.image_shape[:2], 3), device=self.device),
+                "semantic": torch.zeros((self.num_envs, *self.goal_camera.image_shape[:2], len(class_names)), device=self.device),
+                "campos": torch.zeros((self.num_envs, 3), device=self.device),
+                "camrot": torch.zeros((self.num_envs, 4), device=self.device)
+            }
 
     def _debug_vis(self):
         # compute error between end-effector and command
@@ -937,6 +952,7 @@ class ElevatorEnv(IsaacEnv):
         return rgb_data
 
     def random_goal_image(self):
+        print("RANDOMIZE GOAL IMAGE")
         ## Replicator related code
         assert self.num_envs == 1, "randomize goal image only support one environment"
         assert self.goal_camera is not None, "goal camera is not set"
@@ -1091,6 +1107,16 @@ class ElevatorObservationManager(ObservationManager):
     
     def obs_shift_w(self, env: ElevatorEnv):
         return env.obs_shift_w
+
+    def goal_rgb(self, env: ElevatorEnv):
+        return env.goal_dict["rgb"]
+    def goal_semantic(self, env: ElevatorEnv):
+        return env.goal_dict["semantic"]
+
+    def goal_campos(self, env: ElevatorEnv):
+        return env.goal_dict["campos"]
+    def goal_camrot(self, env: ElevatorEnv):
+        return env.goal_dict["camrot"]
 
 
 class ElevatorRewardManager(RewardManager):
