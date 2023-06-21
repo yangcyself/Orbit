@@ -250,7 +250,7 @@ def main():
                 collector_interface.add(f"obs/{key}", value)
             
             for key, value in goal_dict.items():
-                collector_interface.add(f"goal/{key}", value)
+                collector_interface.add(f"obs/goal:{key}", value)
             # -- states
             states = env.get_state()
             collector_interface.add("states", states.cpu().numpy())
