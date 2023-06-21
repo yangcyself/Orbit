@@ -564,6 +564,8 @@ class ElevatorEnv(IsaacEnv):
             if self.cfg.initialization.scene.randomize_door_materials is not None:
                 with rep.get.prims(path_pattern = self.env_ns + "/.*/Elevator/.*sideDoor"):
                     rep.randomizer.materials(self.cfg.initialization.scene.randomize_door_materials)
+            for i in range(5):
+                self.sim.step()
 
     def _step_impl(self, actions: torch.Tensor):
         # pre-step: set actions into buffer

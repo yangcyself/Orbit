@@ -307,6 +307,10 @@ def main():
                 env.reset_idx(done_env_ids)
                 env.reset_buf[done_env_ids] = 0.
                 goal_dict = env.random_goal_image()
+                # wait the visibility resetting of the robot to take effect
+                for i in range(5):
+                    env.sim.step()
+                env.camera.update(dt=env.dt)
                 obs = env.get_observations()
                 obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 
