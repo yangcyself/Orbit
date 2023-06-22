@@ -197,11 +197,13 @@ def main():
                 else:
                     data_logger.record(f"Rollout/{k}/{env_name}", v, epoch, log_stats=True)
         
+        data_logger.flush()
         with open(os.path.join(log_dir, 'rollout_log.txt'), 'a') as logf:
             stamp = datetime.now().strftime("%b%d_%H-%M-%S")
             logf.write(f"{epoch}: {stamp}\n")
 
     # close the simulator
+    data_logger.close()
     simulation_app.close()
 
 
