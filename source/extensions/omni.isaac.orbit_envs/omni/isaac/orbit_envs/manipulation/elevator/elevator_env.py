@@ -945,14 +945,26 @@ class ElevatorEnv(IsaacEnv):
                 cam_data = np.pad(cam_data, padding, mode='constant')
             elif height_diff < 0: # img2 is taller
                 padding = ((0, -height_diff), (0, 0), (0, 0))
-                rgb_data = np.pad(rgb_data, padding, mode='constant')
-            
+                rgb_data = np.pad(rgb_data, padding, mode='constant')            
             # Concatenate the images horizontally
             rgb_data = np.concatenate((rgb_data, cam_data), axis=1)
+            if("goal" in self.modalities and "rgb" in self.goal_dict.keys()):
+                goal_rgb = self.goal_dict["rgb"].squeeze(0).numpy()
+                goal_seg = self.goal_dict["semantic"].to(torch.uint8).squeeze(0).numpy()*255
+                goal_imgs = [goal_rgb, *[np.tile(goal_seg[:,:,[i]],(1,1,3)) for i in range(goal_seg.shape[2])]]
+                goal_data = np.concatenate(goal_imgs, axis = 1)
+                width_diff = goal_data.shape[1] - rgb_data.shape[1]
+                if width_diff > 0: # img1 is taller
+                    padding = ((0, 0), (0, width_diff), (0, 0))
+                    rgb_data = np.pad(rgb_data, padding, mode='constant')
+                elif width_diff < 0: # img2 is taller
+                    padding = ((0, 0), (0, -width_diff), (0, 0))
+                    goal_data = np.pad(goal_data, padding, mode='constant')
+                rgb_data = np.concatenate((goal_data, rgb_data), axis=0)
+
         return rgb_data
 
     def random_goal_image(self):
-        print("RANDOMIZE GOAL IMAGE")
         ## Replicator related code
         assert self.num_envs == 1, "randomize goal image only support one environment"
         assert self.goal_camera is not None, "goal camera is not set"
