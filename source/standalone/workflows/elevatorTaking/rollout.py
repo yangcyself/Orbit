@@ -115,6 +115,14 @@ def main():
     env_cfg.initialization.elevator.max_init_floor = 2
     env_cfg.terminations.is_success = "pushed_btn"
 
+    policy_config_update = dict(
+        algo=dict(
+         rollout=dict(
+            temporal_ensemble=True
+         )   
+        )
+    )
+
     if args_cli.resume is not None:
         print("Resuming from a previous rollout.", args_cli.resume)
         rollout_log = args_cli.resume
@@ -132,12 +140,15 @@ def main():
             done_files = [
                 parse_log_line(line)[0] for line in logf.readlines()
             ]
+        policy_config_update = load_yaml(os.path.join(log_dir, "policy_cfg_update.yaml"))
+        
     else:
         log_dir = datetime.now().strftime("%b%d_%H-%M-%S")
         log_dir = os.path.join(os.path.dirname(os.path.dirname(args_cli.checkpoints)),"logs", "rollout", log_dir)
         # dump the configuration into log-directory
         dump_yaml(os.path.join(log_dir, "env.yaml"), env_cfg)
         dump_pickle(os.path.join(log_dir, "env.pkl"), env_cfg)
+        dump_yaml(os.path.join(log_dir, "policy_cfg_update.yaml"), policy_config_update)
         done_files = []
         with open(os.path.join(log_dir, 'rollout_log.txt'), 'a') as logf:
             logf.write(f"{args_cli.checkpoints}\n")
@@ -156,10 +167,11 @@ def main():
     ]
     allfiles.sort()
     allfiles = [f for f in allfiles if f[0] not in done_files]
+
     for epoch, f in allfiles:
         print("Loading checkpoint", f)
         # restore policy
-        policy = RobomimicWrapper(f, device)
+        policy = RobomimicWrapper(f, policy_config_update, device)
 
         # reset environment
         obs_dict = env.reset()

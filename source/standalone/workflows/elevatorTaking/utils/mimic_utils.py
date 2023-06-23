@@ -7,9 +7,9 @@ import robomimic.utils.file_utils as FileUtils
 class RobomimicWrapper(RolloutPolicy):
     """The Wrapper of the RolloffPolicy
     """
-    def __init__(self, checkpoint, device, verbose=False):
+    def __init__(self, checkpoint, config_update, device, verbose=False):
         self.device = device
-        self.policy, _ = FileUtils.policy_from_checkpoint(ckpt_path=checkpoint, device=device, verbose=verbose)
+        self.policy, _ = FileUtils.policy_from_checkpoint(ckpt_path=checkpoint, cfg_update=config_update, device=device,  verbose=verbose)
 
     def start_episode(self):
         self.policy.start_episode()
@@ -27,6 +27,10 @@ class RobomimicWrapper(RolloutPolicy):
             obs["goal:rgb"] = obs["goal:rgb"].permute(2, 0, 1).to(dtype=torch.float32)/255.
             obs["goal:semantic"] = obs["goal:semantic"].permute(2, 0, 1).to(dtype=torch.float32)/255.
         return torch.tensor(self.policy(obs)).to(self.device)[None,...]
+    
+    @property
+    def config(self):
+        return self.policy.global_config
 
 class myEnvGym(EnvGym):
 
