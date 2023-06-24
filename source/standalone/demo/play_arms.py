@@ -10,6 +10,7 @@ We currently support the following robots:
 
 * Franka Emika Panda
 * Universal Robot UR10
+* DynaArm
 
 From the default configuration file for these robots, zero actions imply a default pose.
 """
@@ -42,6 +43,7 @@ from omni.isaac.core.simulation_context import SimulationContext
 from omni.isaac.core.utils.viewports import set_camera_view
 
 import omni.isaac.orbit.utils.kit as kit_utils
+from omni.isaac.orbit.robots.config.dynaarm import DYNAARM_CFG
 from omni.isaac.orbit.robots.config.franka import FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
 from omni.isaac.orbit.robots.config.universal_robots import UR10_CFG
 from omni.isaac.orbit.robots.single_arm import SingleArmManipulator
@@ -87,6 +89,8 @@ def main():
         robot_cfg = FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
     elif args_cli.robot == "ur10":
         robot_cfg = UR10_CFG
+    elif args_cli.robot == "dynaarm":
+        robot_cfg = DYNAARM_CFG
     else:
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
     # -- Spawn robot
@@ -138,10 +142,9 @@ def main():
                 actions[:, -1] = -1
             print("[INFO]: Resetting robots state...")
         # change the gripper action
-        if ep_step_count % 200 == 0 and has_gripper:
+        if ep_step_count % 200 and has_gripper:
             # flip command for the gripper
             actions[:, -1] = -actions[:, -1]
-            print(f"[INFO]: [Step {ep_step_count:03d}]: Flipping gripper command...")
         # apply action to the robot
         robot.apply_action(actions)
         # perform step

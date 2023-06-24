@@ -46,6 +46,7 @@ from omni.isaac.orbit.controllers.differential_inverse_kinematics import (
     DifferentialInverseKinematicsCfg,
 )
 from omni.isaac.orbit.markers import StaticMarker
+from omni.isaac.orbit.robots.config.dynaarm import DYNAARM_CFG
 from omni.isaac.orbit.robots.config.franka import FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
 from omni.isaac.orbit.robots.config.universal_robots import UR10_CFG
 from omni.isaac.orbit.robots.single_arm import SingleArmManipulator
@@ -104,9 +105,12 @@ def main():
         robot_cfg = FRANKA_PANDA_ARM_WITH_PANDA_HAND_CFG
     elif args_cli.robot == "ur10":
         robot_cfg = UR10_CFG
+    elif args_cli.robot == "dynaarm":
+        robot_cfg = DYNAARM_CFG
     else:
-        raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
-    # configure robot settings to use IK controller
+        raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10, dynaarm")
+    # Configure robot settings to use IK controller
+    # enable the data required from the robot
     robot_cfg.data_info.enable_jacobian = True
     robot_cfg.rigid_props.disable_gravity = True
     # spawn robot
