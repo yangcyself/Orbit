@@ -98,7 +98,12 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
     ),
     actuator_groups={
         # base
-        "base_legs": ANYMAL_D_DEFAULT_GROUP_CFG,
+        # "base_legs": ANYMAL_D_DEFAULT_GROUP_CFG,
+        "base": ActuatorGroupCfg(
+            dof_names=["world_body.*"],
+            model_cfg=ImplicitActuatorCfg(velocity_limit=5e7, torque_limit=1e7),
+            control_cfg=ActuatorControlCfg(command_types=["p_abs"], stiffness={".*": 5e4}, damping={".*": 1e4}),
+        ),
         # arm
         "dynaarm_arm": ActuatorGroupCfg(
             dof_names=["SH_ROT", "SH_FLE", "EL_FLE"],
@@ -109,8 +114,8 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
                 damping={".*": 4.0},
                 dof_pos_offset={
                     "SH_ROT": 0.0,
-                    "SH_FLE": 0.0,  # -0.7,
-                    "EL_FLE": 0.0,  # 1.4,
+                    "SH_FLE": -1.0, # 0.0,  # -0.7,
+                    "EL_FLE": 2.4 # 0.0,  # 1.4,
                 },
             ),
         ),

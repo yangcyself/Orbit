@@ -149,7 +149,7 @@ def main():
     actions_c = torch.zeros(robot_c.count, robot_c.num_actions, device=robot_c.device)
     actions_d = torch.zeros(robot_d.count, robot_d.num_actions, device=robot_d.device)
     actions_a = torch.zeros(robot_a.count, robot_a.num_actions, device=robot_a.device)
-
+    actions_a[:,2] = 0.3  # z
     # Define simulation stepping
     sim_dt = sim.get_physics_dt()
     sim_time = 0.0
@@ -178,6 +178,7 @@ def main():
             actions_c = torch.zeros(robot_c.count, robot_c.num_actions, device=robot_c.device)
             actions_d = torch.zeros(robot_d.count, robot_d.num_actions, device=robot_d.device)
             actions_a = torch.zeros(robot_a.count, robot_a.num_actions, device=robot_a.device)
+            actions_a[:,2] = 0.3  # z
             print(">>>>>>>> Reset!")
         # apply actions
         robot_b.apply_action(actions_b)
