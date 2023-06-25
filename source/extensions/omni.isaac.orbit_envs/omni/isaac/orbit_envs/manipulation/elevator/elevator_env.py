@@ -22,6 +22,7 @@ from omni.isaac.sensor import ContactSensor
 from pxr import Gf
 
 import omni.isaac.orbit.utils.kit as kit_utils
+from omni.isaac.core.utils.rotations import gf_quat_to_np_array
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematics
 from omni.isaac.orbit.markers import PointMarker, StaticMarker
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
@@ -477,10 +478,18 @@ class ElevatorEnv(IsaacEnv):
 
         # Spawn camera
         if(self.camera is not None):
+            up_axis = Gf.Vec3d(-1, 0, 0)
+            eye_position = Gf.Vec3d(0.1, 0.1, 0.05)
+            target_position = Gf.Vec3d(0, 0, 10)
+            matrix_gf = Gf.Matrix4d(1).SetLookAt(eye_position, target_position, up_axis)
+            # camera position and rotation in world frame
+            matrix_gf = matrix_gf.GetInverse()
+            cam_pos = np.array(matrix_gf.ExtractTranslation())
+            cam_quat = gf_quat_to_np_array(matrix_gf.ExtractRotationQuat())
             self.camera.spawn(
-                self.template_env_ns + "/Robot/panda_hand" + "/CameraSensor",
-                translation=(0.05, 0.005, -0.01),
-                orientation=(0.0616284, 0.704416, 0.704416, 0.0616284),
+                self.template_env_ns + "/Robot/dynaarm_FOREARM" + "/CameraSensor",
+                translation=cam_pos,
+                orientation=cam_quat,
             )
         if(self.goal_camera is not None):
             self.goal_camera.spawn(
