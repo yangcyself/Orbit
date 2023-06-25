@@ -25,7 +25,7 @@ class Se3Gamepad(DeviceBase):
 
     The command comprises of two parts:
 
-    * delta pose: a 6D vector of (x, y, z, roll, pitch, yaw) in meters and radians.
+    * delta pose: a 7D vector of (x, y, z, roll, pitch, yaw, axi6) in meters and radians.
     * gripper: a binary command to open or close the gripper.
 
     Stick and Button bindings:
@@ -77,8 +77,8 @@ class Se3Gamepad(DeviceBase):
         #   and `left_stick_up = 0.0`. If only the value of left_stick_up is used, the value will be 0.0,
         #   which is not the desired behavior. Therefore, we save both the values into the buffer and use
         #   the maximum value.
-        # (positive, negative), (x, y, z, roll, pitch, yaw)
-        self._delta_pose_raw = np.zeros([2, 6])
+        # (positive, negative), (x, y, z, roll, pitch, yaw, axis6)
+        self._delta_pose_raw = np.zeros([2, 7])
         # dictionary for additional callbacks
         self._additional_callbacks = dict()
 
@@ -132,11 +132,13 @@ class Se3Gamepad(DeviceBase):
         # -- resolve position command
         delta_pos = self._resolve_command_buffer(self._delta_pose_raw[:, :3])
         # -- resolve rotation command
-        delta_rot = self._resolve_command_buffer(self._delta_pose_raw[:, 3:])
+        delta_rot = self._resolve_command_buffer(self._delta_pose_raw[:, 3:6])
+        # -- resolve other command
+        delta_6 = self._resolve_command_buffer(self._delta_pose_raw[:, [6]])
         # -- convert to rotation vector
         rot_vec = Rotation.from_euler("XYZ", delta_rot).as_rotvec()
         # return the command and gripper state
-        return np.concatenate([delta_pos, rot_vec]), self._close_gripper
+        return np.concatenate([delta_pos, rot_vec, delta_6]), self._close_gripper
 
     """
     Internal helpers.
@@ -212,6 +214,10 @@ class Se3Gamepad(DeviceBase):
             carb.input.GamepadInput.DPAD_RIGHT: (1, 3, self.rot_sensitivity * 0.8),
             # roll command (negative)
             carb.input.GamepadInput.DPAD_LEFT: (0, 3, self.rot_sensitivity * 0.8),
+            # axis 6 (positive)
+            carb.input.GamepadInput.RIGHT_SHOULDER: (0, 6, self.rot_sensitivity * 0.8),
+            # axis 6 (negative)
+            carb.input.GamepadInput.LEFT_SHOULDER: (1, 6, self.rot_sensitivity * 0.8),
         }
 
     def _resolve_command_buffer(self, raw_command: np.ndarray) -> np.ndarray:

@@ -57,7 +57,7 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
     meta_info=LeggedMobileManipulatorCfg.MetaInfoCfg(
         usd_path=_ALMA_INSTANCEABLE_USD,
         soft_dof_pos_limit_factor=0.95,
-        base_num_dof=12,
+        base_num_dof=4,
         arm_num_dof=6,
         tool_num_dof=0,
         tool_sites_names=None,
@@ -65,7 +65,7 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
     feet_info=ANYMAL_D_CFG.feet_info,
     ee_info=LeggedMobileManipulatorCfg.EndEffectorFrameCfg(body_name="dynaarm_WRIST_2"),
     init_state=LeggedMobileManipulatorCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.9),
+        pos=(0.0, 0.0, 0.0),
         dof_pos={
             # base
             "L[F,H]_HAA": -0.1,  # both left HAA
@@ -107,11 +107,12 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
         # arm
         "dynaarm_arm": ActuatorGroupCfg(
             dof_names=["SH_ROT", "SH_FLE", "EL_FLE"],
-            model_cfg=BABOON_ACTUATOR_CFG,  # ImplicitActuatorCfg(velocity_limit=100.0, torque_limit=27.0),
+            # model_cfg=BABOON_ACTUATOR_CFG,  
+            model_cfg = ImplicitActuatorCfg(velocity_limit=100.0, torque_limit=27.0),
             control_cfg=ActuatorControlCfg(
                 command_types=["p_abs", "v_abs", "t_abs"],
-                stiffness={".*": 50.0},
-                damping={".*": 4.0},
+                stiffness={".*": 200.0},
+                damping={".*": 40.0},
                 dof_pos_offset={
                     "SH_ROT": 0.0,
                     "SH_FLE": -1.0, # 0.0,  # -0.7,
@@ -121,11 +122,12 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
         ),
         "dynaarm_wrist": ActuatorGroupCfg(
             dof_names=["FA_ROT", "WRIST_1", "WRIST_2"],
-            model_cfg=COYOTE_ACTUATOR_CFG,  # ImplicitActuatorCfg(velocity_limit=100.0, torque_limit=14.0)
+            # model_cfg=COYOTE_ACTUATOR_CFG,  
+            model_cfg = ImplicitActuatorCfg(velocity_limit=100.0, torque_limit=14.0),
             control_cfg=ActuatorControlCfg(
                 command_types=["p_abs", "v_abs", "t_abs"],
-                stiffness={".*": 50.0},
-                damping={".*": 4.0},
+                stiffness={".*": 200.0},
+                damping={".*": 40.0},
                 dof_pos_offset={
                     "FA_ROT": 0.0,
                     "WRIST_1": 0.0,

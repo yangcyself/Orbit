@@ -577,12 +577,13 @@ class ElevatorEnv(IsaacEnv):
         # transform actions based on controller
         if self.cfg.control.control_type == "inverse_kinematics":
             # set the controller commands
-            ee_quad = self.robot.data.ee_state_w[:, 3:7]
-            cmd_trans = self.actions[:, self.robot.base_num_dof : self.robot.base_num_dof + 3]
-            cmd_quad = self.actions[:, self.robot.base_num_dof + 3 : self.robot.base_num_dof + 6]
-            cmd_trans_rotated = quat_apply(ee_quad, cmd_trans)
-            cmd_quad_rotated = quat_apply(ee_quad, cmd_quad)
-            ik_cmd = torch.cat([cmd_trans_rotated, cmd_quad_rotated], 1).to(device=self.device)
+
+            tool_r = self.robot.data.base_dof_pos[:, 3] + self.robot.data.arm_dof_pos[:, 0]
+            tool_cmd_x = self.actions[:, 6] * torch.cos(tool_r) - self.actions[:, 7] * torch.sin(tool_r)
+            tool_cmd_y = self.actions[:, 6] * torch.sin(tool_r) + self.actions[:, 7] * torch.cos(tool_r)
+            ik_cmd = self.actions[:, 6 : 6 + 6].clone().to(device=self.device)
+            ik_cmd[:, 0] = tool_cmd_x
+            ik_cmd[:, 1] = tool_cmd_y
             self._ik_controller.set_command(ik_cmd)
             # compute the joint commands
             self.robot_actions[
@@ -600,11 +601,16 @@ class ElevatorEnv(IsaacEnv):
                 :, self.robot.base_num_dof : self.robot.base_num_dof + self.robot.arm_num_dof
             ]
             # we assume the first is base command and we rotate it into robot's frame
-            base_r = self.robot.data.base_dof_pos[:, 2]
-            cmd_x = self.actions[:, 0] * torch.cos(base_r) - self.actions[:, 1] * torch.sin(base_r)
-            cmd_y = self.actions[:, 0] * torch.sin(base_r) + self.actions[:, 1] * torch.cos(base_r)
+            base_x = self.robot.data.base_dof_pos[:, 0] # x, y, z, yaw
+            base_y = self.robot.data.base_dof_pos[:, 1] # x, y, z, yaw
+            base_z = self.robot.data.base_dof_pos[:, 2] # x, y, z, yaw
+            base_r = self.robot.data.base_dof_pos[:, 3] # x, y, z, yaw
+            cmd_x = self.actions[:, 0] * torch.cos(base_r) - self.actions[:, 1] * torch.sin(base_r) + base_x
+            cmd_y = self.actions[:, 0] * torch.sin(base_r) + self.actions[:, 1] * torch.cos(base_r) + base_y
+            cmd_z = self.actions[:, 2] + base_z
+            cmd_r = self.actions[:, 5] + base_r
             self.robot_actions[:, : self.robot.base_num_dof] = torch.cat(
-                [cmd_x.unsqueeze(1), cmd_y.unsqueeze(1), self.actions[:, 2].unsqueeze(1)], 1
+                [cmd_x.unsqueeze(1), cmd_y.unsqueeze(1), cmd_z.unsqueeze(1), cmd_r.unsqueeze(1)], 1
             )
             # we assume last command is tool action so don't change that
             self.robot_actions[:, -1] = actions[:, -1]
@@ -789,6 +795,7 @@ class ElevatorEnv(IsaacEnv):
             self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof
 
         # history
+        print("num_actions: ", self.num_actions)
         self.actions = torch.zeros((self.num_envs, self.num_actions), device=self.device)
         self.previous_actions = torch.zeros((self.num_envs, self.num_actions), device=self.device)
         # robot joint actions

@@ -17,7 +17,7 @@ parser = argparse.ArgumentParser("Welcome to Orbit: Omniverse Robotics Environme
 parser.add_argument("--headless", action="store_true", default=False, help="Force display off at all times.")
 parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
-parser.add_argument("--device", type=str, default="keyboard+gamepad", help="Device for interacting with environment")
+parser.add_argument("--device", type=str, default="gamepad", help="Device for interacting with environment")
 parser.add_argument("--sensitivity", type=float, default=1.0, help="Sensitivity factor.")
 args_cli = parser.parse_args()
 args_cli.task = "Isaac-Elevator-Franka-v0"
@@ -33,7 +33,7 @@ import torch
 import sys
 import carb
 
-from omni.isaac.orbit.devices import Se2Keyboard, Se3Gamepad
+from omni.isaac.orbit.devices import Se3Keyboard, Se3Gamepad
 
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
@@ -43,13 +43,22 @@ from omni.isaac.orbit_envs.utils import parse_env_cfg
 CHECK_SAME_OBS_REWARD = False
 PRINT_REWARD_BREAKDOWN = False
 
-def pre_process_actions(base_vel: torch.Tensor, delta_pose: torch.Tensor, gripper_command: bool) -> torch.Tensor:
+def pre_process_actions(cmd: torch.Tensor, gripper_command: bool) -> torch.Tensor:
     """Pre-process actions for the environment."""
     # resolve gripper command
-    gripper_vel = torch.zeros(delta_pose.shape[0], 1, device=delta_pose.device)
+    base_dpos = torch.zeros(cmd.shape[0], 6, device=cmd.device)
+    delta_pose = torch.zeros(cmd.shape[0], 6, device=cmd.device)
+    delta_pose[:, 0] = 0.5*cmd[:, 0] # tool x
+    base_dpos[:, 5] = - cmd[:, 1] # base yaw
+    delta_pose[:, 2] = 0.5*cmd[:, 2] # tool z
+    delta_pose[:, 5] = - cmd[:, 5] # toll yaw
+    base_dpos[:, 2] = cmd[:, 6] # base z
+    base_dpos[:, 0] = - cmd[:, 4] # base x
+    base_dpos[:, 1] = cmd[:, 3] # base y
+    gripper_vel = torch.zeros(cmd.shape[0], 1, device=delta_pose.device)
     gripper_vel[:] = -1.0 if gripper_command else 1.0
     # compute actions
-    return torch.concat([base_vel, delta_pose, gripper_vel], dim=1)
+    return torch.concat([base_dpos, delta_pose, gripper_vel], dim=1)
 
 
 def update_terminal_table(data_dict, num_prev_lines=0):
@@ -112,27 +121,27 @@ def main():
         )
 
     # create controller
-    if args_cli.device.lower() == "keyboard+gamepad":
-        teleop_interface_arm = Se3Gamepad(
+    if args_cli.device.lower() == "gamepad":
+        teleop_interface = Se3Gamepad(
             pos_sensitivity=0.1 * args_cli.sensitivity, rot_sensitivity=0.1 * args_cli.sensitivity
         )
-        teleop_interface_base = Se2Keyboard(
-            v_x_sensitivity=0.2 * args_cli.sensitivity,
-            v_y_sensitivity=0.2 * args_cli.sensitivity,
-            omega_z_sensitivity=0.2 * args_cli.sensitivity,
+    elif args_cli.device.lower() == "keyboard":
+        teleop_interface = Se3Keyboard(
+            pos_sensitivity=0.2 * args_cli.sensitivity,
+            rot_sensitivity=0.4 * args_cli.sensitivity,
         )
+        teleop_interface.add_callback("L", env.reset)
     else:
-        raise ValueError(f"Invalid device interface '{args_cli.device}'. Supported: 'keyboard', 'spacemouse'.")
+        raise ValueError(f"Invalid device interface '{args_cli.device}'. Supported: 'keyboard', 'gamepad'.")
     # add teleoperation key for env reset
-    teleop_interface_base.add_callback("L", env.reset)
     # print helper for keyboard
-    print("Base teleop:", teleop_interface_base)
-    print("Arm teleop:", teleop_interface_arm)
+    print("teleop:", teleop_interface)
+
 
     # reset environment
     env.reset()
-    teleop_interface_base.reset()
-    teleop_interface_arm.reset()
+    teleop_interface.reset()
+    # teleop_interface_arm.reset()
 
     episodic_rewards = {k:v.clone() for k,v in env.reward_manager.episode_sums.items()}
     step_rewards = {k:0 for k,v in env.reward_manager.episode_sums.items()}
@@ -141,13 +150,12 @@ def main():
     # simulate environment
     while simulation_app.is_running():
         # get keyboard command
-        base_cmd = teleop_interface_base.advance()
-        delta_pose, gripper_command = teleop_interface_arm.advance()
+        cmd, gripper_command = teleop_interface.advance()
+
         # convert to torch
-        base_cmd = torch.tensor(base_cmd, dtype=torch.float, device=env.device).repeat(env.num_envs, 1)
-        delta_pose = torch.tensor(delta_pose, dtype=torch.float, device=env.device).repeat(env.num_envs, 1)
+        cmd = torch.tensor(cmd, dtype=torch.float, device=env.device).repeat(env.num_envs, 1)
         # pre-process actions
-        actions = pre_process_actions(base_cmd, delta_pose, gripper_command)
+        actions = pre_process_actions(cmd, gripper_command)
         # apply actions
         obs, rew, downs, info = env.step(actions)
 

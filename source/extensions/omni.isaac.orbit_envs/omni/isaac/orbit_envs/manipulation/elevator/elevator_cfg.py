@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematicsCfg
-from omni.isaac.orbit.robots.config.ridgeback_franka import RIDGEBACK_FRANKA_PANDA_CFG
+# from omni.isaac.orbit.robots.config.ridgeback_franka import RIDGEBACK_FRANKA_PANDA_CFG
+from omni.isaac.orbit.robots.config.alma import ALMA_CFG
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulatorCfg
 from omni.isaac.orbit.utils import configclass
 from omni.isaac.orbit.utils.assets import ISAAC_NUCLEUS_DIR, ASSET_NUCLEUS_DIR
@@ -200,8 +201,8 @@ class ControlCfg:
     inverse_kinematics: DifferentialInverseKinematicsCfg = DifferentialInverseKinematicsCfg(
         command_type="pose_rel",
         ik_method="dls",
-        position_command_scale=(0.1, 0.1, 0.1),
-        rotation_command_scale=(0.1, 0.1, 0.1),
+        position_command_scale=(3.0, 3.0, 3.0),
+        rotation_command_scale=(3.0, 3.0, 3.0),
     )
 
 
@@ -222,7 +223,7 @@ class ElevatorEnvCfg(IsaacEnvCfg):
     sim: SimCfg = SimCfg(dt=1.0 / 60.0, substeps=1)
 
     # Scene Settings
-    robot: MobileManipulatorCfg = RIDGEBACK_FRANKA_PANDA_CFG
+    robot: MobileManipulatorCfg = ALMA_CFG
     marker: MarkerCfg = MarkerCfg()
 
     # MDP settings
