@@ -384,6 +384,18 @@ class ElevatorEnv(IsaacEnv):
                 ),
             )
             self.camera = Camera(cfg=camera_cfg, device="cuda")
+            base_camera_cfg = PinholeCameraCfg(
+                sensor_tick=0,
+                height=128,
+                width=160,
+                data_types=["rgb", "semantic_segmentation"],
+                # FOV = 2 * arctan(horizontal_aperture / (2 * focal_length))
+                # base_camera is wide about 120 degree
+                usd_params=PinholeCameraCfg.UsdCameraCfg(
+                    focal_length=6.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+                ),
+            )
+            self.base_camera = Camera(cfg=base_camera_cfg, device="cuda")
             if(self.cfg.spawn_goal_camera):
                 goal_camera_cfg = PinholeCameraCfg(
                     sensor_tick=0,
@@ -399,6 +411,7 @@ class ElevatorEnv(IsaacEnv):
                 self.goal_camera = None
         else:
             self.camera = None
+            self.base_camera = None
 
         # initialize the base class to setup the scene.
         super().__init__(self.cfg, **kwargs)
@@ -412,6 +425,7 @@ class ElevatorEnv(IsaacEnv):
         # An array to keep track which frame is this it. # traj_id, frame_id
         self.debug_tracker = torch.zeros((self.num_envs, 2), dtype = torch.int32, device=self.device)
 
+        assert (self.base_camera is None or self.camera is not None), "camera must exist if base_camera exists"
         assert (self.num_envs == 1 or self.camera is None), "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
         assert (self.enable_render or self.camera is None), "ElevatorEnv need `headless=False` if camera is wanted"
         # prepare the observation manager
@@ -459,6 +473,8 @@ class ElevatorEnv(IsaacEnv):
         self.elevator.update_buffers(self.dt)
         if(self.camera is not None):
             self.camera.update(dt=self.dt)
+        if(self.base_camera is not None):
+            self.base_camera.update(dt=self.dt)
 
     """
     Implementation specifics.
@@ -479,7 +495,7 @@ class ElevatorEnv(IsaacEnv):
         # Spawn camera
         if(self.camera is not None):
             up_axis = Gf.Vec3d(-1, 0, 0)
-            eye_position = Gf.Vec3d(0.1, 0.1, 0.05)
+            eye_position = Gf.Vec3d(-0.1, 0.1, 0.05)
             target_position = Gf.Vec3d(0, 0, 10)
             matrix_gf = Gf.Matrix4d(1).SetLookAt(eye_position, target_position, up_axis)
             # camera position and rotation in world frame
@@ -490,6 +506,12 @@ class ElevatorEnv(IsaacEnv):
                 self.template_env_ns + "/Robot/dynaarm_FOREARM" + "/CameraSensor",
                 translation=cam_pos,
                 orientation=cam_quat,
+            )
+        if(self.base_camera is not None):
+            self.base_camera.spawn(
+                self.template_env_ns + "/Robot/base" + "/CameraSensor",
+                translation=(0.3, 0, 0.2),
+                orientation=(-0.5, -0.5, 0.5, 0.5),
             )
         if(self.goal_camera is not None):
             self.goal_camera.spawn(
@@ -649,6 +671,8 @@ class ElevatorEnv(IsaacEnv):
         self.elevator.update_buffers(self.dt)
         if(self.camera is not None):
             self.camera.update(dt=self.dt)
+        if(self.base_camera is not None):
+            self.base_camera.update(dt=self.dt)
 
         # -- compute mid-level states # this should happen before reward, termination, observation and success
         elevator_state = self.elevator._sm_state.to(self.device)
@@ -788,6 +812,8 @@ class ElevatorEnv(IsaacEnv):
 
         if(self.camera is not None):
             self.camera.initialize()
+        if(self.base_camera is not None):
+            self.base_camera.initialize()
         # self.camera.initialize(self.env_ns + "/.*/Robot/panda_hand/CameraSensor/Camera")
         if(self.goal_camera is not None):
             self.goal_camera.initialize()
