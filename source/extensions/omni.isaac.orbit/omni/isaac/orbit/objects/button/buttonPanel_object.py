@@ -8,48 +8,43 @@ from typing import Optional, Sequence
 
 import carb
 import omni.isaac.core.utils.prims as prim_utils
-from omni.isaac.core.materials import PhysicsMaterial
-from omni.isaac.core.articulations import ArticulationView 
 
 import omni.isaac.orbit.utils.kit as kit_utils
 
-from .button_cfg import ButtonObjectCfg
-from .button_data import ButtonObjectData
+from .buttonPanel_cfg import ButtonPanelCfg
+from .buttonPanel_data import ButtonPanelData
+from .button_object import ButtonObject
+
 import math
 
 
-class ButtonObject:
-    """Class for handling button objects.
+class ButtonPanel:
+    """Class for handling button panels.
 
-    Button objects are spawned from USD files and are encapsulated by a single root prim.
-    The root prim is used to apply physics material to the button body.
-
-    This class wraps around :class:`ArticulationView` class from Isaac Sim to support the following:
-
-    * Configuring using a single dataclass (struct).
-    * Applying physics material to the button body.
-    * Handling different button body views.
-    * Storing data related to the button object.
-
+    A button panel is a rectangular panel with multiple buttons.
+    This class wraps around multiple buttons. 
+    
     """
 
-    cfg: ButtonObjectCfg
+    cfg: ButtonPanelCfg
     """Configuration class for the button object."""
-    objects: ArticulationView
+    button: ButtonObject
     """Button prim view for the button object."""
 
-    def __init__(self, cfg: ButtonObjectCfg):
+    def __init__(self, cfg: ButtonPanelCfg):
         """Initialize the button object.
 
         Args:
-            cfg (ButtonObjectCfg): An instance of the configuration class.
+            cfg (ButtonPanelCfg): An instance of the configuration class.
         """
         # store inputs
         self.cfg = cfg
         # container for data access
-        self._data = ButtonObjectData()
+        self._data = ButtonPanelData()
         # buffer variables (filled during spawn and initialize)
         self._spawn_prim_path: str = None
+        if(len(self.cfg.btn_cfgs) > 0):
+            self.button: ButtonObject = ButtonObject(self.cfg.btn_cfgs[0])
 
     """
     Properties
@@ -66,7 +61,7 @@ class ButtonObject:
         return self.articulations._device
 
     @property
-    def data(self) -> ButtonObjectData:
+    def data(self) -> ButtonPanelData:
         """Data related to articulation."""
         return self._data
 
@@ -87,6 +82,11 @@ class ButtonObject:
             orientation (Sequence[float], optional): The local rotation (as quaternion `(w, x, y, z)`
                 of the prim from its parent. Defaults to None.
         """
+        # use default arguments
+        if translation is None:
+            translation = self.cfg.init_state.pos
+        if orientation is None:
+            orientation = self.cfg.init_state.rot
 
         # -- save prim path for later
         self._spawn_prim_path = prim_path
@@ -95,18 +95,33 @@ class ButtonObject:
             # add prim as reference to stage
             prim_utils.create_prim(
                 self._spawn_prim_path,
-                usd_path=self.cfg.usd_path,
+                "Xform",
                 translation=translation,
                 orientation=orientation,
-                scale=self.cfg.scale,
+                scale = (1.0,1.0,1.0)
             )
-            if(self.cfg.symbol_usd_path is not None):
-                prim_utils.create_prim(
-                    self._spawn_prim_path + "/symbol/symbol",
-                    usd_path=self.cfg.symbol_usd_path,
-                    translation=(0,0,0.2/30),
-                    scale=self.cfg.scale,
-                )
+            prim_utils.create_prim(
+                self._spawn_prim_path+"/Panel",
+                "Cube",
+                translation=(0, 0, 0),
+                scale=(self.cfg.panel_size[0]/2, self.cfg.panel_size[1]/2, 0.005),
+
+            )
+            self.btn_count = 0
+            button_spacing_x = self.cfg.panel_size[0]/self.cfg.panel_grids[0]
+            button_spacing_y = self.cfg.panel_size[1]/self.cfg.panel_grids[1]
+            button_spacing_xb = - self.cfg.panel_size[0]/2
+            button_spacing_yb = - self.cfg.panel_size[1]/2
+            for i in range(self.cfg.panel_grids[0]):
+                for j in range(self.cfg.panel_grids[1]):
+                    self.button.cfg.usd_path = self.cfg.btn_cfgs[self.btn_count].usd_path
+                    self.button.cfg.symbol_usd_path = self.cfg.btn_cfgs[self.btn_count].symbol_usd_path
+                    self.button.spawn(f"{prim_path}/button_{self.btn_count}", 
+                        translation=(button_spacing_xb+(i+0.5)*button_spacing_x, 
+                                     button_spacing_yb+(j+0.5)*button_spacing_y, 
+                                     0.005)
+                    )
+                    self.btn_count += 1
         else:
             carb.log_warn(f"A prim already exists at prim path: '{prim_path}'. Skipping...")
 
@@ -136,21 +151,8 @@ class ButtonObject:
                 )
         else:
             self._prim_paths_expr = prim_paths_expr
-        # create handles
-        # -- object views
-        self.articulations = ArticulationView(prim_paths_expr, reset_xform_properties=False)
-        self.articulations.initialize()
-        # set the default state
-        self.articulations.post_reset()
+        self.button.initialize(f"{self._prim_paths_expr}/button.*")
 
-        # create buffers
-        # constants
-        self._ALL_INDICES = torch.arange(self.count, dtype=torch.long, device=self.device)
-        # -- frame states
-        self.data.dof_pos = self.articulations.get_joint_positions(indices=self._ALL_INDICES, clone=False)
-        self.data.dof_vel = self.articulations.get_joint_velocities(indices=self._ALL_INDICES, clone=False)
-        self.data.btn_state = torch.zeros((self.count, 1), dtype=torch.bool, device=self.device)
-        self.data.btn_state = torch.zeros((self.count, 1), dtype=torch.bool, device=self.device)
     def reset_buffers(self, env_ids: Optional[Sequence[int]] = None):
         """Resets all internal buffers.
 
@@ -158,7 +160,7 @@ class ButtonObject:
             env_ids (Optional[Sequence[int]], optional): The indices of the object to reset.
                 Defaults to None (all instances).
         """
-        pass
+        self.button.reset_buffers(env_ids)
 
     def update_buffers(self, dt: float = None):
         """Update the internal buffers.
@@ -169,12 +171,5 @@ class ButtonObject:
         Args:
             dt (float, optional): The amount of time passed from last `update_buffers` call. Defaults to None.
         """
-        # frame states
-        self.data.dof_pos[:,:] = self.articulations.get_joint_positions(indices=self._ALL_INDICES, clone=False)
-        self.data.dof_vel[:,:] = self.articulations.get_joint_velocities(indices=self._ALL_INDICES, clone=False)
-        self.data.btn_state[:,:] = torch.where(self.data.btn_isdown, True, self.data.btn_state)
-
-        # Flip the light if the button is pressed or have btn_state
-        light_on = self.data.btn_state[:,[0]] | self.data.btn_isdown[:,[0]]
-        self.articulations.set_joint_positions((~light_on) * math.pi, self._ALL_INDICES, torch.tensor([1]))
+        self.button.update_buffers(dt)
 
