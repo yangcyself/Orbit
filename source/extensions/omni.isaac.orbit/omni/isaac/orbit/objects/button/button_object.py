@@ -15,6 +15,7 @@ import omni.isaac.orbit.utils.kit as kit_utils
 
 from .button_cfg import ButtonObjectCfg
 from .button_data import ButtonObjectData
+import math
 
 
 class ButtonObject:
@@ -57,12 +58,12 @@ class ButtonObject:
     @property
     def count(self) -> int:
         """Number of prims encapsulated."""
-        return self.objects.count
+        return self.articulations.count
 
     @property
     def device(self) -> str:
         """Memory device for computation."""
-        return self.objects._device
+        return self.articulations._device
 
     @property
     def data(self) -> ButtonObjectData:
@@ -95,7 +96,6 @@ class ButtonObject:
         # -- save prim path for later
         self._spawn_prim_path = prim_path
         # -- spawn asset if it doesn't exist.
-        print("USD path: ", self.cfg.meta_info.usd_path)
         if not prim_utils.is_prim_path_valid(prim_path):
             # add prim as reference to stage
             prim_utils.create_prim(
@@ -143,16 +143,19 @@ class ButtonObject:
             self._prim_paths_expr = prim_paths_expr
         # create handles
         # -- object views
-        self.objects = ArticulationView(prim_paths_expr, reset_xform_properties=False)
-        self.objects.initialize()
+        self.articulations = ArticulationView(prim_paths_expr, reset_xform_properties=False)
+        self.articulations.initialize()
         # set the default state
-        self.objects.post_reset()
-        # set properties over all instances
-        # -- meta-information
-        self._process_info_cfg()
-        # create buffers
-        self._create_buffers()
+        self.articulations.post_reset()
 
+        # create buffers
+        # constants
+        self._ALL_INDICES = torch.arange(self.count, dtype=torch.long, device=self.device)
+        # -- frame states
+        self.data.dof_pos = self.articulations.get_joint_positions(indices=self._ALL_INDICES, clone=False)
+        self.data.dof_vel = self.articulations.get_joint_velocities(indices=self._ALL_INDICES, clone=False)
+        self.data.btn_state = torch.zeros((self.count, 1), dtype=torch.bool, device=self.device)
+        self.data.btn_state = torch.zeros((self.count, 1), dtype=torch.bool, device=self.device)
     def reset_buffers(self, env_ids: Optional[Sequence[int]] = None):
         """Resets all internal buffers.
 
@@ -166,16 +169,19 @@ class ButtonObject:
         """Update the internal buffers.
 
         The time step ``dt`` is used to compute numerical derivatives of quantities such as joint
-        accelerations which are not provided by the simulator.
+        accelerations which are not provided by the simulator. Not used for this object.
 
         Args:
             dt (float, optional): The amount of time passed from last `update_buffers` call. Defaults to None.
         """
         # frame states
-        position_w, quat_w = self.objects.get_world_poses(indices=self._ALL_INDICES, clone=False)
-        self._data.root_state_w[:, 0:3] = position_w
-        self._data.root_state_w[:, 3:7] = quat_w
-        self._data.root_state_w[:, 7:] = self.objects.get_velocities(indices=self._ALL_INDICES, clone=False)
+        self.data.dof_pos[:,:] = self.articulations.get_joint_positions(indices=self._ALL_INDICES, clone=False)
+        self.data.dof_vel[:,:] = self.articulations.get_joint_velocities(indices=self._ALL_INDICES, clone=False)
+        self.data.btn_state[:,:] = torch.where(self.data.btn_isdown, True, self.data.btn_state)
+
+        # Flip the light if the button is pressed or have btn_state
+        light_on = self.data.btn_state[:,[0]] | self.data.btn_isdown[:,[0]]
+        self.articulations.set_joint_positions((~light_on) * math.pi, self._ALL_INDICES, torch.tensor([1]))
 
     """
     Operations - State.
@@ -193,56 +199,11 @@ class ButtonObject:
         if env_ids is None:
             env_ids = self._ALL_INDICES
         # set into simulation
-        self.objects.set_world_poses(root_states[:, 0:3], root_states[:, 3:7], indices=env_ids)
-        self.objects.set_velocities(root_states[:, 7:], indices=env_ids)
+        self.articulations.set_world_poses(root_states[:, 0:3], root_states[:, 3:7], indices=env_ids)
+        self.articulations.set_velocities(root_states[:, 7:], indices=env_ids)
 
         # TODO: Move these to reset_buffers call.
         # note: we need to do this here since tensors are not set into simulation until step.
         # set into internal buffers
         self._data.root_state_w[env_ids] = root_states.clone()
 
-    def get_default_root_state(self, env_ids: Optional[Sequence[int]] = None, clone=True) -> torch.Tensor:
-        """Returns the default/initial root state of actor.
-
-        Args:
-            env_ids (Optional[Sequence[int]], optional): Environment indices.
-                Defaults to None (all environment indices).
-            clone (bool, optional): Whether to return a copy or not. Defaults to True.
-
-        Returns:
-            torch.Tensor: The default/initial root state of the actor, shape: (len(env_ids), 13).
-        """
-        # use ellipses object to skip initial indices.
-        if env_ids is None:
-            env_ids = ...
-        # return copy
-        if clone:
-            return torch.clone(self._default_root_states[env_ids])
-        else:
-            return self._default_root_states[env_ids]
-
-    """
-    Internal helper.
-    """
-
-    def _process_info_cfg(self) -> None:
-        """Post processing of configuration parameters."""
-        # default state
-        # -- root state
-        # note: we cast to tuple to avoid torch/numpy type mismatch.
-        default_root_state = (
-            tuple(self.cfg.init_state.pos)
-            + tuple(self.cfg.init_state.rot)
-            + tuple(self.cfg.init_state.lin_vel)
-            + tuple(self.cfg.init_state.ang_vel)
-        )
-        self._default_root_states = torch.tensor(default_root_state, dtype=torch.float, device=self.device)
-        self._default_root_states = self._default_root_states.repeat(self.count, 1)
-
-    def _create_buffers(self):
-        """Create buffers for storing data."""
-        # constants
-        self._ALL_INDICES = torch.arange(self.count, dtype=torch.long, device=self.device)
-
-        # -- frame states
-        self._data.root_state_w = torch.zeros(self.count, 13, dtype=torch.float, device=self.device)
