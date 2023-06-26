@@ -101,7 +101,7 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
         # "base_legs": ANYMAL_D_DEFAULT_GROUP_CFG,
         "base": ActuatorGroupCfg(
             dof_names=["world_body.*"],
-            model_cfg=ImplicitActuatorCfg(velocity_limit=5e7, torque_limit=1e7),
+            model_cfg=ImplicitActuatorCfg(velocity_limit=100, torque_limit=50),
             control_cfg=ActuatorControlCfg(command_types=["p_abs"], stiffness={".*": 5e4}, damping={".*": 1e4}),
         ),
         # arm

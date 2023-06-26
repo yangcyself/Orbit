@@ -888,10 +888,10 @@ class ElevatorEnv(IsaacEnv):
     def _randomize_robot_initial_pose(self, env_ids: torch.Tensor):
         if(self.cfg.initialization.robot.position_cat=="uniform"):
             dof, dof_vel = self.robot.get_default_dof_state(env_ids)
-            dof[:, 0:3] = sample_uniform(
+            dof[:, 0:4] = sample_uniform(
                 torch.tensor([self.cfg.initialization.robot.position_uniform_min], device=self.device), 
                 torch.tensor([self.cfg.initialization.robot.position_uniform_max], device=self.device), 
-                (len(env_ids), 3), device=self.device
+                (len(env_ids), 4), device=self.device
             )
             self.robot.set_dof_state(dof, dof_vel, env_ids=env_ids)
 

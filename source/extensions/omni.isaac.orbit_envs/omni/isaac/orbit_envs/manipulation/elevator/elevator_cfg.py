@@ -42,8 +42,8 @@ class InitializationCfg:
         # category
         position_cat: str = "uniform"  # randomize position: "default", "uniform"
         # randomize position
-        position_uniform_min = [0.9, 0.3, -3.1]  # position (x,y,z)
-        position_uniform_max = [2.1, 2., 0.]  # position (x,y,z)
+        position_uniform_min = [0.9, 0.3, 0.3, -3.1]  # position (x,y,z,yaw)
+        position_uniform_max = [2.1, 2.,  0.7, 0.]  # position (x,y,z,yaw)
     
     @configclass
     class ElevatorStateCfg:
