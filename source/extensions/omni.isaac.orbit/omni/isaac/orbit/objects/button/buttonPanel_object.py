@@ -24,12 +24,8 @@ class ButtonPanel:
     A button panel is a rectangular panel with multiple buttons.
     This class wraps around multiple buttons. 
     
+    Provide helper functions for the buttons
     """
-
-    cfg: ButtonPanelCfg
-    """Configuration class for the button object."""
-    button: ButtonObject
-    """Button prim view for the button object."""
 
     def __init__(self, cfg: ButtonPanelCfg):
         """Initialize the button object.
@@ -39,26 +35,36 @@ class ButtonPanel:
         """
         # store inputs
         self.cfg = cfg
-        # container for data access
+        # container for data access, Empty for now
         self._data = ButtonPanelData()
         # buffer variables (filled during spawn and initialize)
         self._spawn_prim_path: str = None
         if(len(self.cfg.btn_cfgs) > 0):
             self.button: ButtonObject = ButtonObject(self.cfg.btn_cfgs[0])
 
+        """ The count of `spawn` calls. I assume each spawn call relates to a environment. """
+        self.env_count: int = 0
+        """ The count of buttons created. """
+        self.btn_count: int = 0
+
+
     """
     Properties
     """
-
     @property
     def count(self) -> int:
         """Number of prims encapsulated."""
-        return self.articulations.count
+        return self.env_count
+
+    @property
+    def btn_per_env(self) -> int:
+        """Number of buttons per environment."""
+        return self.cfg.panel_grids[0] * self.cfg.panel_grids[1]
 
     @property
     def device(self) -> str:
         """Memory device for computation."""
-        return self.articulations._device
+        return self.button.device
 
     @property
     def data(self) -> ButtonPanelData:
@@ -107,7 +113,7 @@ class ButtonPanel:
                 scale=(self.cfg.panel_size[0]/2, self.cfg.panel_size[1]/2, 0.005),
 
             )
-            self.btn_count = 0
+            
             button_spacing_x = self.cfg.panel_size[0]/self.cfg.panel_grids[0]
             button_spacing_y = self.cfg.panel_size[1]/self.cfg.panel_grids[1]
             button_spacing_xb = - self.cfg.panel_size[0]/2
@@ -124,7 +130,7 @@ class ButtonPanel:
                     self.btn_count += 1
         else:
             carb.log_warn(f"A prim already exists at prim path: '{prim_path}'. Skipping...")
-
+        self.env_count += 1
 
     def initialize(self, prim_paths_expr: Optional[str] = None):
         """Initializes the PhysX handles and internal buffers.
@@ -152,6 +158,9 @@ class ButtonPanel:
         else:
             self._prim_paths_expr = prim_paths_expr
         self.button.initialize(f"{self._prim_paths_expr}/button.*")
+        # sanity check
+        assert self.btn_count == self.button.count, "Button count mismatch!"
+        assert self.btn_per_env ==  int(self.btn_count / self.env_count), "Button per env count mismatch!"
 
     def reset_buffers(self, env_ids: Optional[Sequence[int]] = None):
         """Resets all internal buffers.
@@ -173,3 +182,29 @@ class ButtonPanel:
         """
         self.button.update_buffers(dt)
 
+    def get_state_env_any(self, btn_ids: Optional[Sequence[int]] = None):
+        """Get button state and reduce them within env (with any).
+        btn_ids: The indices of the button to get state from. Defaults to None (all buttons).
+                  The indices are counted from 0 for each environment.
+        Returns:
+            torch.tensor: The button state.
+        """
+        
+        states = self.button.data.btn_state.view(self.env_count, self.btn_per_env)
+        if btn_ids is None:
+            btn_ids = ...
+        return states[:, btn_ids].any(dim=1)
+    
+    def set_state_env_all(self, s:int = 0, btn_ids: Optional[Sequence[int]] = None, env_ids:Optional[Sequence[int]] = None):
+        """Set button state and reduce them within env (with all).
+        s: The state to set to. Defaults to 0 (off).
+        btn_ids: The indices of the button to set state to. Defaults to None (all buttons).
+                  The indices are counted from 0 for each environment.
+        env_ids: The indices of the environment to set state to. Defaults to None (all environments).
+        """
+        if btn_ids is None:
+            btn_ids = ...
+        if env_ids is None:
+            env_ids = ...
+        self.button.data.btn_state.view(self.env_count, self.btn_per_env)[env_ids, btn_ids] = s
+    

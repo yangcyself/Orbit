@@ -21,8 +21,6 @@ class ButtonObjectData:
     """Dof pos shape is ``(btn_count, dof)``."""
     btn_state: torch.Tensor = None
     """Whether the button is pushed or not. Shape is ``(btn_count, 1)``."""
-    env_obj_mapping: torch.Tensor = None
-    """ The mapping between btn_idx and env_idx. Shape is ``(btn_count, 1)``."""
 
     """
     Properties

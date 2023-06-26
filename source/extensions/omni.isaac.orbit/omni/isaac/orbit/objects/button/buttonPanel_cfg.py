@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from dataclasses import MISSING
-from typing import Optional, Tuple, List 
+from typing import Optional, Tuple, Sequence
 
 from omni.isaac.orbit.utils import configclass
 from .button_cfg import ButtonObjectCfg
@@ -21,7 +21,7 @@ class ButtonPanelCfg:
     """Size of the panel in meters. height, width Defaults to (0.1, 0.1)."""
     panel_grids: Tuple[int, int] = (0, 0)
     """Number of buttons in the panel, rows, columns. Defaults to (0, 0)."""
-    btn_cfgs: List[ButtonObjectCfg] = []
+    btn_cfgs: Sequence[ButtonObjectCfg] = []
 
     randomizer: RandomizerCfg = RandomizerCfg()
     

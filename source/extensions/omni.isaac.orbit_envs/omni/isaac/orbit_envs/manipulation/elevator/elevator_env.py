@@ -26,6 +26,7 @@ from omni.isaac.core.utils.rotations import gf_quat_to_np_array
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematics
 from omni.isaac.orbit.markers import PointMarker, StaticMarker
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
+from omni.isaac.orbit.objects.button import ButtonPanel, ButtonPanelCfg, ButtonObjectCfg
 from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
 from omni.isaac.orbit.utils.dict import class_to_dict
 from omni.isaac.orbit.utils.math import quat_apply, quat_mul, scale_transform, sample_uniform, matrix_from_quat, \
@@ -78,13 +79,10 @@ class ElevatorSmWaitTime(Enum):
 
 
 @wp.func
-def BtnOpensFloor(tid: wp.int32, floor: wp.int32, sm_state: wp.array(dtype=wp.int32, ndim=2)):  # Check floor and button
+def BtnOpensFloor(tid: wp.int32, floor: wp.int32, btn_state: wp.array(dtype=wp.int32)):  # Check floor and button
     toOpenDoor = False
-    if floor == 0 and (sm_state[tid, 2]) == ButtonSmState.ON.value:  # At the floor 0
-        sm_state[tid, 2] = ButtonSmState.OFF.value
-        toOpenDoor = True
-    if floor == 0 and (sm_state[tid, 3]) == ButtonSmState.ON.value:  # At the floor 0
-        sm_state[tid, 3] = ButtonSmState.OFF.value
+    if floor == 0 and (btn_state[tid]) == ButtonSmState.ON.value:  # At the floor 0
+        btn_state[tid] = ButtonSmState.OFF.value
         toOpenDoor = True
     return toOpenDoor
 
@@ -92,10 +90,9 @@ def BtnOpensFloor(tid: wp.int32, floor: wp.int32, sm_state: wp.array(dtype=wp.in
 @wp.kernel
 def infer_state_machine(
     dt: wp.float32,
-    Nbtn: wp.int32,
-    sm_state: wp.array(dtype=wp.int32, ndim=2),
-    sm_wait_time: wp.array(dtype=wp.float32),
-    btn_pose: wp.array(dtype=wp.float32, ndim=2),
+    sm_state: wp.array(dtype=wp.int32, ndim=2), # state machine state
+    sm_wait_time: wp.array(dtype=wp.float32), # state machine wait time
+    btn_state: wp.array(dtype=wp.int32), # button state
     door_state: wp.array(dtype=wp.int32),
 ):
     # retrieve thread id
@@ -105,16 +102,11 @@ def infer_state_machine(
     # update the floor states
     floor = sm_state[tid, 1]
 
-    # update the btn states
-    for i in range(Nbtn):
-        if btn_pose[tid, i] < 0.0:
-            sm_state[tid, i + 2] = ButtonSmState.ON.value
-
     # decide next state
     if state == ElevatorSmState.REST.value:
         door_state[tid] = DoorState.CLOSE.value
 
-        toOpenDoor = BtnOpensFloor(tid, floor, sm_state)
+        toOpenDoor = BtnOpensFloor(tid, floor, btn_state)
         if toOpenDoor:
             sm_state[tid, 0] = ElevatorSmState.DOOR_OPENING.value
             sm_wait_time[tid] = 0.0
@@ -126,7 +118,7 @@ def infer_state_machine(
     elif state == ElevatorSmState.DOOR_OPENING.value:
         door_state[tid] = DoorState.OPEN.value
 
-        toOpenDoor = BtnOpensFloor(tid, floor, sm_state)
+        toOpenDoor = BtnOpensFloor(tid, floor, btn_state)
         if toOpenDoor:
             sm_state[tid, 0] = ElevatorSmState.DOOR_OPENING.value
             sm_wait_time[tid] = 0.0
@@ -138,7 +130,7 @@ def infer_state_machine(
     elif state == ElevatorSmState.DOOR_CLOSING.value:
         door_state[tid] = DoorState.CLOSE.value
 
-        toOpenDoor = BtnOpensFloor(tid, floor, sm_state)
+        toOpenDoor = BtnOpensFloor(tid, floor, btn_state)
         if toOpenDoor:
             sm_state[tid, 0] = ElevatorSmState.DOOR_OPENING.value
             sm_wait_time[tid] = 0.0
@@ -182,12 +174,9 @@ class ElevatorSm:
         self.num_envs = num_envs
         self.device = device
         print("\n\n\nDEVICE:", self.device)
-        # initialize state machine
-        self.sm_Nbtn = torch.full((self.num_envs,), 2, dtype=torch.int32, device=self.device)
-        # states for the floor and buttons, [elevstate, Floor, down btn, up btn]
-        self.sm_state = torch.full((self.num_envs, 4), 0, dtype=torch.int32, device=self.device)
+        # states for the floor and buttons, [elevstate, Floor]
+        self.sm_state = torch.full((self.num_envs, 2), 0, dtype=torch.int32, device=self.device)
         self.sm_wait_time = torch.zeros((self.num_envs,), dtype=torch.float32, device=self.device)
-
         # desired state for the door
         self.door_state = torch.zeros((self.num_envs,), dtype=torch.int32, device=self.device)
         # convert to warp
@@ -202,19 +191,19 @@ class ElevatorSm:
         self.sm_state[env_ids,:] = 0
         self.sm_wait_time[env_ids] = 0.0
 
-    def compute(self, dt: float, btn_pos: torch.Tensor):
+    def compute(self, dt: float, btn_state: torch.Tensor):
         """Compute the desired state of the robot's end-effector and the gripper."""
         # convert to warp
-        btn_pos_wp = wp.from_torch(btn_pos.to(self.device), wp.float32)
+        btn_state_wp = wp.from_torch(btn_state.to(self.device, dtype=torch.int32), wp.int32)
         # run state machine
         wp.launch(
             kernel=infer_state_machine,
             dim=self.num_envs,
-            inputs=[dt, 2, self.sm_state_wp, self.sm_wait_time_wp, btn_pos_wp, self.door_state_wp],
+            inputs=[dt, self.sm_state_wp, self.sm_wait_time_wp, btn_state_wp, self.door_state_wp],
         )
         wp.synchronize()
         # convert to torch
-        return self.door_state.bool()
+        return self.door_state.bool(), btn_state.bool()
 
 
 class Elevator:
@@ -319,9 +308,6 @@ class Elevator:
         self._dof_index_door = [
             self._dof_index[n] for n in ["PJoint_LO_Door", "PJoint_RO_Door", "PJoint_LI_Door", "PJoint_RI_Door"]
         ]
-        self._dof_index_btn = [self._dof_index[n] for n in ["PJoint_OU_Btn", "PJoint_OD_Btn"]]
-        self._dof_index_light = [self._dof_index[n] for n in ["RJoint_OU_Light", "RJoint_OD_Light"]]
-
         self._sm = ElevatorSm(self.count, "cuda")
         self._sm_state = self._sm.sm_state
 
@@ -335,24 +321,27 @@ class Elevator:
             return
         self._sm.reset_idx(env_ids)
         self.articulations.set_joint_positions(torch.zeros((len(env_ids), 4),device = self.device), env_ids, self._dof_index_door)
-        self.articulations.set_joint_positions(torch.full((len(env_ids), len(self._dof_index_btn)),2e-3,device = self.device), env_ids, self._dof_index_btn)
         self.articulations.set_joint_velocities(torch.full((len(env_ids), len(self._dof_index)),0.,device = self.device), env_ids)
 
-    def update_buffers(self, dt: float):
+    def update_buffers(self, btn_state:torch.Tensor,  dt: float):
+        """Step the elevator state machine.
+            The interaction between elevator and button systems are extracted out
+        Args:
+            btn_state (torch.Tensor): The state of the buttons.
+            dt (float): not used. Time between steps.
+
+        Returns:
+            torch.Tensor: new btn_state
+        """
         self._dof_pos[:] = self.articulations.get_joint_positions(indices=self.all_mask, clone=False)
-        door_state = self._sm.compute(dt, self._dof_pos[:, self._dof_index_btn])
+        door_state, btn_state_new = self._sm.compute(dt, btn_state)
         self._door_state = door_state.to(self.device)
         sm_state = self._sm_state.to(self.device)
         self._door_pos_targets = (
             torch.Tensor([[1.0, -1.0, 1.0, -1.0]]).to(self.device) * torch.where(self._door_state[..., None], 0.8, 0.0)
         ).to(self.device)
-        # print("dof_pos", self._dof_pos)
-        # print("sm_state", sm_state)
-        self.articulations.set_joint_positions(sm_state[:, -2:] * 3.14, self.all_mask, self._dof_index_light)
         self.articulations.set_joint_position_targets(self._door_pos_targets, self.all_mask, self._dof_index_door)
-        self.articulations.set_joint_position_targets(
-            self._dof_pos[:, self._dof_index_btn] + 1, self.all_mask, self._dof_index_btn
-        )
+        return btn_state_new
 
 
 class ElevatorEnv(IsaacEnv):
@@ -372,7 +361,22 @@ class ElevatorEnv(IsaacEnv):
         # create classes (these are called by the function :meth:`_design_scene`
         self.robot = MobileManipulator(cfg=self.cfg.robot)
         self.elevator = Elevator()
-
+        self.buttonPanel = ButtonPanel(
+            cfg=ButtonPanelCfg(
+                panel_size = (0.1, 0.2),
+                panel_grids = (1, 2),
+                btn_cfgs=[
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_0.usd"
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_1.usd"
+                    )
+                ]
+            )
+        )
         if("rgb" in self.modalities):
             camera_cfg = PinholeCameraCfg(
                 sensor_tick=0,
@@ -439,8 +443,8 @@ class ElevatorEnv(IsaacEnv):
             class_to_dict(self.cfg.rewards), self, self.num_envs, self.dt, self.device
         )
         # print information about MDP
-        print("[INFO] Observation Manager:", self._observation_manager)
-        print("[INFO] Reward Manager: ", self.reward_manager)
+        # print("[INFO] Observation Manager:", self._observation_manager)
+        # print("[INFO] Reward Manager: ", self.reward_manager)
 
         # compute the observation space
         modality_space_dict = {}
@@ -461,7 +465,7 @@ class ElevatorEnv(IsaacEnv):
             else:
                 obs_space_dict[k] = modality_space_dict[k]
         self.observation_space = gym.spaces.Dict(obs_space_dict)
-        print("[INFO] Observation Space: ", self.observation_space)
+        # print("[INFO] Observation Space: ", self.observation_space)
 
         # compute the action space
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(self.num_actions,))
@@ -470,7 +474,10 @@ class ElevatorEnv(IsaacEnv):
         self.sim.step()
         # -- fill up buffers
         self.robot.update_buffers(self.dt)
-        self.elevator.update_buffers(self.dt)
+        self.buttonPanel.update_buffers(self.dt)
+        btn_state = self.elevator.update_buffers(self.buttonPanel.get_state_env_any(), self.dt)
+        self.buttonPanel.set_state_env_all(0, None, torch.nonzero(~btn_state).flatten())
+        self.buttonPanel.update_buffers(self.dt)
         if(self.camera is not None):
             self.camera.update(dt=self.dt)
         if(self.base_camera is not None):
@@ -490,6 +497,12 @@ class ElevatorEnv(IsaacEnv):
             self.template_env_ns + "/Elevator",
             translation=(1.5, -2.0, 0.0),
             orientation=(sqrt(1 / 2), 0.0, 0.0, sqrt(1 / 2)),
+        )
+        self.buttonPanel.spawn(
+            self.template_env_ns + "/ButtonPanel",
+            translation=(0, 0, 0.6),
+            # orientation=(1 ,0.0, 0.0 , 0.0),
+            orientation=(sqrt(1 / 2), -sqrt(1 / 2), 0.0, 0.0 ),
         )
 
         # Spawn camera
@@ -546,6 +559,7 @@ class ElevatorEnv(IsaacEnv):
         dof_pos, dof_vel = self.robot.get_default_dof_state(env_ids=env_ids)
         self.robot.set_dof_state(dof_pos, dof_vel, env_ids=env_ids)
         self.elevator.reset_idx(env_ids=env_ids)
+        self.buttonPanel.reset_buffers(env_ids=env_ids)
 
         # -- init pose
         self._randomize_robot_initial_pose(env_ids=env_ids)
@@ -668,7 +682,10 @@ class ElevatorEnv(IsaacEnv):
         # post-step:
         # -- compute common buffers
         self.robot.update_buffers(self.dt)
-        self.elevator.update_buffers(self.dt)
+        self.buttonPanel.update_buffers(self.dt)
+        btn_state = self.elevator.update_buffers(self.buttonPanel.get_state_env_any(), self.dt)
+        self.buttonPanel.set_state_env_all(0, None, torch.nonzero(~btn_state).flatten())
+        self.buttonPanel.update_buffers(self.dt)
         if(self.camera is not None):
             self.camera.update(dt=self.dt)
         if(self.base_camera is not None):
@@ -676,8 +693,7 @@ class ElevatorEnv(IsaacEnv):
 
         # -- compute mid-level states # this should happen before reward, termination, observation and success
         elevator_state = self.elevator._sm_state.to(self.device)
-        self._hasdone_pushbtn = torch.where(elevator_state[:,2]>0, True, self._hasdone_pushbtn)
-        self._hasdone_pushbtn = torch.where(elevator_state[:,3]>0, True, self._hasdone_pushbtn)
+        self._hasdone_pushbtn = torch.where(self.buttonPanel.get_state_env_any(), True, self._hasdone_pushbtn)
         self.debug_tracker[:,1] += 1
 
         # -- compute MDP signals
@@ -686,7 +702,7 @@ class ElevatorEnv(IsaacEnv):
         self.reward_penalizing_factor[elevator_state[:,0]==1] *= 2.
         self.reward_penalizing_factor[elevator_state[:,0]==2] *= 2.
         self.reward_penalizing_factor[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] *= 3.
-        self.reward_penalizing_factor[(elevator_state[:,0]==3) & (elevator_state[:,1]!=0) & ((elevator_state[:,2]>0) | (elevator_state[:,3]>0))] *= 2.
+        self.reward_penalizing_factor[(elevator_state[:,0]==3) & (elevator_state[:,1]!=0) & (self.buttonPanel.get_state_env_any())] *= 2.
         self.reward_buf = self.reward_manager.compute()
         # terminations
         self._check_termination()
@@ -805,6 +821,7 @@ class ElevatorEnv(IsaacEnv):
         # define views over instances
         self.robot.initialize(self.env_ns + "/.*/Robot")
         self.elevator.initialize(self.env_ns + "/.*/Elevator")
+        self.buttonPanel.initialize(self.env_ns + "/.*/ButtonPanel")
 
         # Create the contact views
         self.rigidContacts = RigidContactView(self.env_ns + "/.*/Elevator/.*", [], prepare_contact_sensors=False, apply_rigid_body_api=False)
@@ -1113,7 +1130,7 @@ class ElevatorObservationManager(ObservationManager):
     def elevator_btn_pressed(self, env: ElevatorEnv):
         """Whether the button is pressed"""
         elevator_state = env.elevator._sm_state.to(env.device)
-        return ((elevator_state[:,2,None]>0) | (elevator_state[:,3,None]>0)).to(dtype = torch.float32, device = env.device)
+        return env.buttonPanel.get_state_env_any().unsqueeze(1).to(dtype = torch.float32, device = env.device)
 
     def hand_camera_rgb(self, env: ElevatorEnv):
         """RGB camera observations.
@@ -1243,7 +1260,7 @@ class ElevatorRewardManager(RewardManager):
         reward[elevator_state[:,0]==1 ] = 1. # No reward gradient for button pushing when elevator is not at rest
         reward[(elevator_state[:,0]==2) ] = 0.
         reward[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] = 0.
-        reward[(elevator_state[:,0]==3) & (elevator_state[:,1]!=0) & ((elevator_state[:,2]>0) | (elevator_state[:,3]>0))] = 1.
+        reward[(elevator_state[:,0]==3) & (elevator_state[:,1]!=0) & (env.buttonPanel.get_state_env_any())] = 1.
         return reward
 
     def tracking_reference_button_rot(self, env: ElevatorEnv, sigma):
@@ -1259,7 +1276,7 @@ class ElevatorRewardManager(RewardManager):
         reward[elevator_state[:,0]==1 ] = 1. # No reward gradient for button pushing when elevator is not at rest
         reward[(elevator_state[:,0]==2) ] = 0.
         reward[(elevator_state[:,0]==3) & (elevator_state[:,1]==0)] = 0.
-        reward[(elevator_state[:,0]==3) & ((elevator_state[:,2]> 0) | (elevator_state[:,3]> 0))] = 1.
+        reward[(elevator_state[:,0]==3) & (env.buttonPanel.get_state_env_any())] = 1.
         return reward
 
     def tracking_reference_enter(self, env: ElevatorEnv, sigma):        
@@ -1284,6 +1301,6 @@ class ElevatorRewardManager(RewardManager):
         # no reward if the door is closed and robot is outside of the elevator
         elevator_state = env.elevator._sm_state.to(env.device)
         reward[elevator_state[:,1] == 0] = 0.
-        reward[(elevator_state[:,2] == 0) & (elevator_state[:,3] == 0)] = 0. # Neigther btn is pressed
+        reward[~env.buttonPanel.get_state_env_any()] = 0. # Neigther btn is pressed
         return reward
 
