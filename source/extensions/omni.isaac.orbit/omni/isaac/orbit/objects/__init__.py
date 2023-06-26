@@ -9,6 +9,7 @@ Submodule containing all objects abstractions.
 
 from .articulated import ArticulatedObject, ArticulatedObjectCfg, ArticulatedObjectData
 from .rigid import RigidObject, RigidObjectCfg, RigidObjectData
+from .button import ButtonObject, ButtonObjectCfg, ButtonObjectData
 
 __all__ = [
     # rigid objects
@@ -19,4 +20,8 @@ __all__ = [
     "ArticulatedObjectCfg",
     "ArticulatedObjectData",
     "ArticulatedObject",
+    # button objects
+    "ButtonObjectCfg",
+    "ButtonObjectData",
+    "ButtonObject",
 ]
