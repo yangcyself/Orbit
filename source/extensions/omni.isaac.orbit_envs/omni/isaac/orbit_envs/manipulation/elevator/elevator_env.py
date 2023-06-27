@@ -698,8 +698,6 @@ class ElevatorEnv(IsaacEnv):
             self.robot_actions[:, : self.robot.base_num_dof] = torch.cat(
                 [cmd_x.unsqueeze(1), cmd_y.unsqueeze(1), cmd_z.unsqueeze(1), cmd_r.unsqueeze(1)], 1
             )
-            # we assume last command is tool action so don't change that
-            self.robot_actions[:, -1] = actions[:, -1]
         elif self.cfg.control.control_type == "default":
             actions = self.actions.clone()
             if self.cfg.control.substract_action_from_obs_frame:

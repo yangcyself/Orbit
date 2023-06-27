@@ -26,7 +26,7 @@ from omni.isaac.orbit.actuators.config.dynadrive import BABOON_ACTUATOR_CFG, COY
 from omni.isaac.orbit.actuators.group import ActuatorControlCfg, ActuatorGroupCfg
 from omni.isaac.orbit.actuators.model import ImplicitActuatorCfg
 
-from ..mobile_manipulator import LeggedMobileManipulatorCfg
+from ..mobile_manipulator import MobileManipulatorCfg
 from .anymal import ANYMAL_D_CFG
 
 ##
@@ -53,8 +53,8 @@ def euler_rpy_apply(rpy, xyz, degrees=False):
 
 _ALMA_INSTANCEABLE_USD = os.path.join(ASSETS_DATA_DIR, "robots", "anybotics",  "alma", "alma_instanceable.usd")
 
-ALMA_CFG = LeggedMobileManipulatorCfg(
-    meta_info=LeggedMobileManipulatorCfg.MetaInfoCfg(
+ALMA_CFG = MobileManipulatorCfg(
+    meta_info=MobileManipulatorCfg.MetaInfoCfg(
         usd_path=_ALMA_INSTANCEABLE_USD,
         soft_dof_pos_limit_factor=0.95,
         base_num_dof=4,
@@ -62,18 +62,10 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
         tool_num_dof=0,
         tool_sites_names=None,
     ),
-    feet_info=ANYMAL_D_CFG.feet_info,
-    ee_info=LeggedMobileManipulatorCfg.EndEffectorFrameCfg(body_name="dynaarm_WRIST_2"),
-    init_state=LeggedMobileManipulatorCfg.InitialStateCfg(
+    ee_info=MobileManipulatorCfg.EndEffectorFrameCfg(body_name="dynaarm_WRIST_2"),
+    init_state=MobileManipulatorCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.0),
         dof_pos={
-            # base
-            "L[F,H]_HAA": -0.1,  # both left HAA
-            "R[F,H]_HAA": 0.1,  # both right HAA
-            ".*F_HFE": 0.7,  # both front HFE
-            ".*H_HFE": -0.7,  # both hind HFE
-            ".*F_KFE": -1.0,  # both front KFE
-            ".*H_KFE": 1.0,  # both hind KFE
             # dynaarm
             "SH_ROT": 0.0,
             "SH_FLE": -0.7,
@@ -84,7 +76,7 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
         },
         dof_vel={".*": 0.0},
     ),
-    rigid_props=LeggedMobileManipulatorCfg.RigidBodyPropertiesCfg(
+    rigid_props=MobileManipulatorCfg.RigidBodyPropertiesCfg(
         disable_gravity=False,
         retain_accelerations=False,
         linear_damping=0.0,
@@ -93,12 +85,11 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
         max_angular_velocity=1000.0,
         max_depenetration_velocity=1.0,
     ),
-    articulation_props=LeggedMobileManipulatorCfg.ArticulationRootPropertiesCfg(
+    articulation_props=MobileManipulatorCfg.ArticulationRootPropertiesCfg(
         enable_self_collisions=False, solver_position_iteration_count=4, solver_velocity_iteration_count=0
     ),
     actuator_groups={
         # base
-        # "base_legs": ANYMAL_D_DEFAULT_GROUP_CFG,
         "base": ActuatorGroupCfg(
             dof_names=["world_body.*"],
             model_cfg=ImplicitActuatorCfg(velocity_limit=100, torque_limit=50),
@@ -110,7 +101,7 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
             # model_cfg=BABOON_ACTUATOR_CFG,  
             model_cfg = ImplicitActuatorCfg(velocity_limit=100.0, torque_limit=27.0),
             control_cfg=ActuatorControlCfg(
-                command_types=["p_abs", "v_abs", "t_abs"],
+                command_types=["p_abs"],
                 stiffness={".*": 200.0},
                 damping={".*": 40.0},
                 dof_pos_offset={
@@ -125,7 +116,7 @@ ALMA_CFG = LeggedMobileManipulatorCfg(
             # model_cfg=COYOTE_ACTUATOR_CFG,  
             model_cfg = ImplicitActuatorCfg(velocity_limit=100.0, torque_limit=14.0),
             control_cfg=ActuatorControlCfg(
-                command_types=["p_abs", "v_abs", "t_abs"],
+                command_types=["p_abs"],
                 stiffness={".*": 200.0},
                 damping={".*": 40.0},
                 dof_pos_offset={

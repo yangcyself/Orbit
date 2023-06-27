@@ -192,7 +192,7 @@ class ControlCfg:
     """Processing of MDP actions."""
 
     # action space
-    control_type = "ohneHand"  # "default", "inverse_kinematics", "ohneHand"
+    control_type = "default"  # "default", "inverse_kinematics", "ohneHand"
     substract_action_from_obs_frame = True
     # decimation: Number of control action updates @ sim dt per policy dt
     decimation = 2

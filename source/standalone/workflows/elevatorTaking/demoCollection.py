@@ -54,6 +54,12 @@ from rslrl_config import parse_rslrl_cfg
 from omni.isaac.orbit_envs.utils import get_checkpoint_path, parse_env_cfg
 from omni.isaac.orbit_envs.utils.wrappers.rsl_rl import RslRlVecEnvWrapper, export_policy_as_onnx
 
+# For IK controller
+from omni.isaac.orbit.controllers.differential_inverse_kinematics import (
+    DifferentialInverseKinematics,
+    DifferentialInverseKinematicsCfg,
+)
+
 # Default arguments for actor wrappers
 ACTOR_CONFIGS = {
     "rslrl": {
@@ -62,17 +68,25 @@ ACTOR_CONFIGS = {
     "human":{
         "device": "keyboard+gamepad",
         "sensitivity": 1.0
+    },
+    "ik":{
+        "ik_cfg":{
+            "command_type" : "position_abs",
+            "ik_method" : "dls",
+            "position_offset" : (0.0, 0.0, 0.0),
+            "rotation_offset" : (1.0, 0.0, 0.0, 0.0) 
+        }
     }
 }
 
 # A simple configuration for rollout collection
 EXP_CONFIGS = {
-    "actor_type": "rslrl",
+    "actor_type": "ik",
     "collect_demonstration": True,
     "wrapper_cfg": None,
     "collect_extra_info": True,
     "num_demos": args_cli.num_demos,
-    "apply_action_noise": 0.1 # the noise to be applied on action, in order to generate diverse trajectory
+    "apply_action_noise": 0. # the noise to be applied on action, in order to generate diverse trajectory
 }
 
 
@@ -102,7 +116,8 @@ class ActorWrapperBase:
     """
     def get_action(self, obs):
         raise NotImplementedError
-
+    def reset(self, env_ids = None):
+        raise NotImplementedError
 
 class RslRlActor(ActorWrapperBase):
     """
@@ -125,6 +140,9 @@ class RslRlActor(ActorWrapperBase):
         with torch.no_grad():
             action = self.policy(obs_rsl)
             return action
+    
+    def reset(self, env_ids = None):
+        pass
 
 class HumanActor(ActorWrapperBase):
     """
@@ -161,7 +179,45 @@ class HumanActor(ActorWrapperBase):
         delta_pose = torch.tensor(delta_pose, dtype=torch.float, device=self.env.device).repeat(self.env.num_envs, 1)
         # compute actions based on environment
         return pre_process_actions(base_cmd, delta_pose, gripper_command)
-        
+    
+    def reset(self, env_ids = None):
+        pass
+
+    
+class IK_Actor(ActorWrapperBase):
+    """
+    Wrapper for ik to provide actions
+    """
+    def __init__(self, env, ik_cfg):
+        self.env = env
+        self.robot = self.env.robot
+        self.ik_control_cfg = DifferentialInverseKinematicsCfg(**ik_cfg)
+        self.ik_controller = DifferentialInverseKinematics(self.ik_control_cfg, self.env.num_envs, self.env.device)
+        self.ik_controller.initialize()
+        self.ik_controller.reset_idx()
+
+        # buffers, save the need of frequent alloc and dealloc
+        self.ik_commands = torch.zeros(self.robot.count, self.ik_controller.num_actions, device=self.robot.device)
+        # self.robot_actions = torch.ones(self.robot.count, self.robot.num_actions, device=self.robot.device)
+
+        # Note: We need to update buffers before the first step for the controller.
+        self.robot.update_buffers(self.env.dt)
+
+    def get_action(self, obs):
+        current_dof = self.robot.data.dof_pos
+        self.ik_commands[:] = torch.tensor([0.0, 0.0, 0.6])
+        self.ik_controller.set_command(self.ik_commands)
+        arm_actions  = self.ik_controller.compute(
+            self.robot.data.ee_state_w[:, 0:3],
+            self.robot.data.ee_state_w[:, 3:7],
+            self.robot.data.ee_jacobian,
+            self.robot.data.arm_dof_pos,
+        )
+        robot_actions = torch.cat([current_dof[:,:4],arm_actions],axis = 1)
+        return robot_actions
+
+    def reset(self, env_ids = None):
+        self.ik_controller.reset_idx(env_ids)
 
 def main():
     """Collect demonstrations from the environment using teleop interfaces."""
@@ -196,6 +252,12 @@ def main():
     elif(EXP_CONFIGS["actor_type"] == "rslrl"):
         # Set wrapper config
         EXP_CONFIGS["wrapper_cfg"]["checkpoint"] = args_cli.checkpoint
+    elif(EXP_CONFIGS["actor_type"] == "ik"):
+        pass
+        # enable jacobian computation
+        env_cfg.robot.data_info.enable_jacobian = True
+        # enable gravity compensation
+        env_cfg.robot.rigid_props.disable_gravity = True
     else:
         raise ValueError(f"Invalid actor type '{EXP_CONFIGS['actor_type']}'. Supported: 'human', 'rslrl'.")
 
@@ -208,6 +270,8 @@ def main():
     elif(EXP_CONFIGS["actor_type"] == "rslrl"):
         # create actor
         actor = RslRlActor(env, args_cli.task, args_cli.checkpoint)
+    elif(EXP_CONFIGS["actor_type"] == "ik"):
+        actor = IK_Actor(env, EXP_CONFIGS["wrapper_cfg"]["ik_cfg"])
     
     # specify directory for logging experiments
     log_dir = datetime.now().strftime("%b%d_%H-%M-%S")

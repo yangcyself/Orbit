@@ -107,7 +107,7 @@ def main():
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = False
     env_cfg.observations.return_dict_obs_in_group = True
-    env_cfg.control.control_type = "ohneHand"
+    env_cfg.control.control_type = "default"
     env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "low_dim":None, "goal":["goal","goal_lowdim"]}
     env_cfg.initialization.robot.position_cat = "uniform"
     env_cfg.initialization.elevator.moving_elevator_prob = 0
