@@ -344,6 +344,35 @@ class Elevator:
         self.articulations.set_joint_position_targets(self._door_pos_targets, self.all_mask, self._dof_index_door)
         return btn_state_new
 
+    @property
+    def state_should_dims(self):
+        state_should_dims = [0]
+        state_should_dims.append(state_should_dims[-1] + self._dof_pos.shape[1]) # dof_pos
+        state_should_dims.append(state_should_dims[-1] + self._dof_pos.shape[1]) # dof_vel
+        state_should_dims.append(state_should_dims[-1] + self._sm_state.shape[1]) # sm state
+        state_should_dims.append(state_should_dims[-1] + self._sm.sm_wait_time.shape[0]) # sm wait time
+        return state_should_dims
+
+    def get_state(self):
+        # Return the underlying state of a simulated environment. Should be compatible with reset_to.
+        elevator_dofpos = self.articulations.get_joint_positions(indices=self.all_mask, clone=True).to(self.device)
+        elevator_dofvel = self.articulations.get_joint_velocities(indices=self.all_mask, clone=True).to(self.device)
+        elevator_state = self._sm_state.to(self.device)
+        elevator_wait_time = self._sm.sm_wait_time.to(self.device).unsqueeze(1)
+        return torch.cat([elevator_dofpos, elevator_dofvel, elevator_state, elevator_wait_time], dim=1)
+    
+    def reset_to(self, state):
+        # Reset the simulated environment to a given state. Useful for reproducing results
+        # state: N x D tensor, where N is the number of environments and D is the dimension of the state
+        state_should_dims = self.state_should_dims
+        assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
+        self._dof_pos[:,:] = state[:, state_should_dims[0]:state_should_dims[1]].to(self._dof_pos)
+        _dof_vel = state[:, state_should_dims[1]:state_should_dims[2]].to(self._dof_pos)
+        self._sm_state[:,:] = state[:, state_should_dims[2]:state_should_dims[3]].to(self._sm_state)
+        self._sm.sm_wait_time[:] = state[:, state_should_dims[3]:state_should_dims[4]].to(self._sm.sm_wait_time).squeeze(1)
+        self.articulations.set_joint_positions(self._dof_pos, indices=self.all_mask)
+        self.articulations.set_joint_velocities(_dof_vel, indices=self.all_mask)
+
 
 class ElevatorEnv(IsaacEnv):
     """Initializes the of a mobileManipulator and an elevator
@@ -774,45 +803,39 @@ class ElevatorEnv(IsaacEnv):
                 obs_dict[k] = obs[k]
         return obs_dict
 
+    @property
+    def state_should_dims(self):
+        """
+        The dims for vectorized state, used in get_state and reset_to_state
+        """
+        state_should_dims = [0] 
+        state_should_dims.append(state_should_dims[-1] + self._obs_shift_w.shape[1])
+        state_should_dims.append(state_should_dims[-1] + self.robot.state_should_dims[-1])
+        state_should_dims.append(state_should_dims[-1] + self.buttonPanel.state_should_dims[-1])
+        state_should_dims.append(state_should_dims[-1] + self.elevator.state_should_dims[-1])
+        state_should_dims.append(state_should_dims[-1] + self.debug_tracker.shape[1])
+        return state_should_dims
+
     def get_state(self):
         # Return the underlying state of a simulated environment. Should be compatible with reset_to.
         obs_shift_w = self._obs_shift_w
-        elevator_dofpos = self.elevator.articulations.get_joint_positions(indices=self.elevator.all_mask, clone=True).to(self.device)
-        elevator_dofvel = self.elevator.articulations.get_joint_velocities(indices=self.elevator.all_mask, clone=True).to(self.device)
-        elevator_state = self.elevator._sm_state.to(self.device)
-        elevator_wait_time = self.elevator._sm.sm_wait_time.to(self.device).unsqueeze(1)
-        robot_dofpos = self.robot.articulations.get_joint_positions(indices=self.robot._ALL_INDICES, clone=True).to(self.device) 
-        robot_dofvel = self.robot.articulations.get_joint_velocities(indices=self.robot._ALL_INDICES, clone=True).to(self.device) 
+        robot_state = self.robot.get_state()
+        buttonPanel_state = self.buttonPanel.get_state()
+        elevator_state = self.elevator.get_state()
         debug_info = self.debug_tracker.to(self.device)
-        return torch.cat([obs_shift_w, elevator_dofpos, elevator_dofvel, elevator_state, elevator_wait_time, robot_dofpos, robot_dofvel, debug_info], dim=1)
+        return torch.cat([obs_shift_w, robot_state, buttonPanel_state, elevator_state, debug_info], dim=1)
 
     def reset_to(self, state):
         # Reset the simulated environment to a given state. Useful for reproducing results
         # state: N x D tensor, where N is the number of environments and D is the dimension of the state
         
-        state_should_dims = [0]
-        state_should_dims.append(state_should_dims[-1] + self._obs_shift_w.shape[1])
-        state_should_dims.append(state_should_dims[-1] + self.elevator._dof_pos.shape[1])
-        state_should_dims.append(state_should_dims[-1] + self.elevator._dof_pos.shape[1]) # dof_vel
-        state_should_dims.append(state_should_dims[-1] + self.elevator._sm_state.shape[1])
-        state_should_dims.append(state_should_dims[-1] + self.elevator._sm.sm_wait_time.shape[0])
-        state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_pos.shape[1])
-        state_should_dims.append(state_should_dims[-1] + self.robot.data.dof_vel.shape[1])
-        state_should_dims.append(state_should_dims[-1] + self.debug_tracker.shape[1])
+        state_should_dims = self.state_should_dims
         assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
         self._obs_shift_w[:,:] = state[:, state_should_dims[0]:state_should_dims[1]].to(self._obs_shift_w)
-        self.elevator._dof_pos[:,:] = state[:, state_should_dims[1]:state_should_dims[2]].to(self.elevator._dof_pos)
-        _dof_vel = state[:, state_should_dims[2]:state_should_dims[3]].to(self.elevator._dof_pos)
-        self.elevator._sm_state[:,:] = state[:, state_should_dims[3]:state_should_dims[4]].to(self.elevator._sm_state)
-        self.elevator._sm.sm_wait_time[:] = state[:, state_should_dims[4]:state_should_dims[5]].to(self.elevator._sm.sm_wait_time).squeeze(1)
-        self.robot.data.dof_pos[:,:] = state[:, state_should_dims[5]:state_should_dims[6]].to(self.robot.data.dof_pos)
-        self.robot.data.dof_vel[:,:] = state[:, state_should_dims[6]:state_should_dims[7]].to(self.robot.data.dof_vel)
-        self.debug_tracker[:,:] = state[:, state_should_dims[7]:state_should_dims[8]].to(self.debug_tracker)
-        
-        self.elevator.articulations.set_joint_positions(self.elevator._dof_pos, indices=self.elevator.all_mask)
-        self.elevator.articulations.set_joint_velocities(_dof_vel, indices=self.elevator.all_mask)
-        self.robot.articulations.set_joint_positions(self.robot.data.dof_pos, indices=self.robot._ALL_INDICES)
-        self.robot.articulations.set_joint_velocities(self.robot.data.dof_vel, indices=self.robot._ALL_INDICES)
+        self.robot.reset_to_state(state[:, state_should_dims[1]:state_should_dims[2]])
+        self.buttonPanel.reset_to(state[:, state_should_dims[2]:state_should_dims[3]])
+        self.elevator.reset_to(state[:, state_should_dims[3]:state_should_dims[4]])
+        self.debug_tracker[:,:] = state[:, state_should_dims[4]:state_should_dims[5]].to(self.debug_tracker)
 
     """
     Helper functions - Scene handling.

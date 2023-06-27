@@ -151,6 +151,7 @@ class ButtonObject:
         self.data.dof_vel = self.articulations.get_joint_velocities(indices=self._ALL_INDICES, clone=False)
         self.data.btn_state = torch.zeros((self.count, 1), dtype=torch.bool, device=self.device)
         self.data.btn_state = torch.zeros((self.count, 1), dtype=torch.bool, device=self.device)
+
     def reset_buffers(self, env_ids: Optional[Sequence[int]] = None):
         """Resets all internal buffers.
 
@@ -158,7 +159,14 @@ class ButtonObject:
             env_ids (Optional[Sequence[int]], optional): The indices of the object to reset.
                 Defaults to None (all instances).
         """
-        pass
+        if env_ids is None:
+            env_ids = self._ALL_INDICES
+        elif len(env_ids) == 0:
+            return
+        # set button to relax and lights to off
+        self.articulations.set_joint_positions(torch.tensor([[0.005,math.pi]],device=self.device).tile(len(env_ids),1), env_ids)
+        # Set velocities to zero
+        self.articulations.set_joint_velocities(torch.full((len(env_ids), 2),0.,device = self.device), env_ids)
 
     def update_buffers(self, dt: float = None):
         """Update the internal buffers.
@@ -177,4 +185,30 @@ class ButtonObject:
         # Flip the light if the button is pressed or have btn_state
         light_on = self.data.btn_state[:,[0]] | self.data.btn_isdown[:,[0]]
         self.articulations.set_joint_positions((~light_on) * math.pi, self._ALL_INDICES, torch.tensor([1]))
+
+    @property
+    def state_should_dims(self):
+        state_should_dims = [0]
+        state_should_dims.append(state_should_dims[-1] + self.data.dof_pos.shape[1])
+        state_should_dims.append(state_should_dims[-1] + self.data.dof_vel.shape[1])
+        state_should_dims.append(state_should_dims[-1] + self.data.btn_state.shape[1])
+        return state_should_dims
+
+    def get_state(self):
+        # Return the underlying state of a simulated environment. Should be compatible with reset_to.
+        dofpos = self.articulations.get_joint_positions(indices=self._ALL_INDICES, clone=True).to(self.device)
+        dofvel = self.articulations.get_joint_velocities(indices=self._ALL_INDICES, clone=True).to(self.device)
+        btn_state = self.data.btn_state.to(self.device)
+        return torch.cat([dofpos, dofvel, btn_state], dim=1)
+    
+    def reset_to(self, state):
+        # Reset the simulated environment to a given state. Useful for reproducing results
+        # state: N x D tensor, where N is the number of environments and D is the dimension of the state
+        state_should_dims = self.state_should_dims
+        assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
+        self.data.dof_pos[:,:] =  state[:, state_should_dims[0]:state_should_dims[1]].to(self.data.dof_pos)
+        self.data.dof_vel[:,:] =  state[:, state_should_dims[1]:state_should_dims[2]].to(self.data.dof_vel)
+        self.data.btn_state[:,:] =  state[:, state_should_dims[2]:state_should_dims[3]].to(self.data.btn_state)
+        self.articulations.set_joint_positions(self.data.dof_pos, indices=self._ALL_INDICES)
+        self.articulations.set_joint_velocities(self.data.dof_vel, indices=self._ALL_INDICES)
 

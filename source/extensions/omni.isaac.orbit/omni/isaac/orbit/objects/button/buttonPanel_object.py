@@ -208,3 +208,11 @@ class ButtonPanel:
             env_ids = ...
         self.button.data.btn_state.view(self.env_count, self.btn_per_env)[env_ids, btn_ids] = s
     
+    def get_state(self):
+        # Return the underlying state of a simulated environment. Should be compatible with reset_to.
+        return self.button.get_state().view(self.env_count, -1)
+    
+    def reset_to(self, state):
+        # Reset the simulated environment to a given state. Useful for reproducing results
+        # state: N x D tensor, where N is the number of environments and D is the dimension of the state
+        self.button.reset_to(state.view(self.btn_count, -1))

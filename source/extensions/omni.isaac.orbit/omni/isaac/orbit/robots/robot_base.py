@@ -511,3 +511,33 @@ class RobotBase:
         # store the offset amounts from actuator groups
         for group in self.actuator_groups.values():
             self._data.actuator_pos_offset[:, group.dof_indices] = group.dof_pos_offset
+
+
+
+    @property
+    def state_should_dims(self):
+        """
+        The dims for vectorized state, used in get_state and reset_to_state
+        """
+        state_should_dims = [i*self.num_dof for i in range(3)] # pos, vel
+        return state_should_dims
+
+    def get_state(self):
+        """Get the state of everything,
+           Return the underlying state of a simulated environment. Should be compatible with reset_to_state.
+        """
+        
+        return torch.cat([
+            self._data.dof_pos,
+            self._data.dof_vel
+        ], dim=1)
+
+    def reset_to_state(self, state):
+        # Reset the simulated environment to a given state. Useful for reproducing results
+        # state: N x D tensor, where N is the number of environments and D is the dimension of the state
+        state_should_dims = self.state_should_dims
+        assert state.shape[1] == state_should_dims[-1], "state should have dimension {} but got shape {}".format(state_should_dims[-1], state.shape)
+        self.set_dof_state(
+            dof_pos = state[:, state_should_dims[0]:state_should_dims[1]],
+            dof_vel = state[:, state_should_dims[1]:state_should_dims[2]],
+        )
