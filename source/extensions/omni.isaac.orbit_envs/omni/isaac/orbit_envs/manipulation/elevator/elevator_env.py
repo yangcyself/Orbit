@@ -2,43 +2,43 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-import os
 import gym.spaces
 import math
 import numpy as np
+import os
 import torch
 from enum import Enum
 from math import sqrt
-
 # Modules for Elevator
 from typing import Optional, Sequence, Union  # Dict, List, Tuple
 
 import carb
 import omni.isaac.core.utils.prims as prim_utils
+# replicator
+import omni.replicator.core as rep
 import warp as wp
-from omni.isaac.core.articulations import ArticulationView 
+from omni.isaac.core.articulations import ArticulationView
 from omni.isaac.core.prims import RigidContactView
+from omni.isaac.core.utils.rotations import gf_quat_to_np_array
 from omni.isaac.sensor import ContactSensor
 from pxr import Gf
 
+from omni.isaac.assets import ASSETS_DATA_DIR
+
 import omni.isaac.orbit.utils.kit as kit_utils
-from omni.isaac.core.utils.rotations import gf_quat_to_np_array
 from omni.isaac.orbit.controllers.differential_inverse_kinematics import DifferentialInverseKinematics
 from omni.isaac.orbit.markers import PointMarker, StaticMarker
+from omni.isaac.orbit.objects.button import ButtonObjectCfg, ButtonPanel, ButtonPanelCfg
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulator
-from omni.isaac.orbit.objects.button import ButtonPanel, ButtonPanelCfg, ButtonObjectCfg
 from omni.isaac.orbit.sensors.camera import Camera, PinholeCameraCfg
 from omni.isaac.orbit.utils.dict import class_to_dict
-from omni.isaac.orbit.utils.math import quat_apply, quat_mul, scale_transform, sample_uniform, matrix_from_quat, \
-    combine_frame_transforms, quat_from_euler_xyz
+from omni.isaac.orbit.utils.math import (combine_frame_transforms, matrix_from_quat, quat_apply, quat_from_euler_xyz,
+                                         quat_mul, sample_uniform, scale_transform)
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
 
 from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
-from omni.isaac.assets import ASSETS_DATA_DIR
-from .elevator_cfg import ElevatorEnvCfg
 
-# replicator
-import omni.replicator.core as rep
+from .elevator_cfg import ElevatorEnvCfg
 
 # import omni.isaac.orbit_envs  # noqa: F401
 # from omni.isaac.orbit_envs.utils.parse_cfg import parse_env_cfg
@@ -577,16 +577,16 @@ class ElevatorEnv(IsaacEnv):
 
         # Spawn camera
         if(self.camera is not None):
-            up_axis = Gf.Vec3d(-1, 0, 0)
-            eye_position = Gf.Vec3d(-0.1, 0.1, 0.05)
-            target_position = Gf.Vec3d(0, 0, 10)
+            up_axis = Gf.Vec3d(0, -1, 0)
+            eye_position = Gf.Vec3d(0.05, -0.1, 0.1)
+            target_position = Gf.Vec3d(10, 0, 0)
             matrix_gf = Gf.Matrix4d(1).SetLookAt(eye_position, target_position, up_axis)
             # camera position and rotation in world frame
             matrix_gf = matrix_gf.GetInverse()
             cam_pos = np.array(matrix_gf.ExtractTranslation())
             cam_quat = gf_quat_to_np_array(matrix_gf.ExtractRotationQuat())
             self.camera.spawn(
-                self.template_env_ns + "/Robot/dynaarm_FOREARM" + "/CameraSensor",
+                self.template_env_ns + "/Robot/dynaarm_ELBOW" + "/CameraSensor",
                 translation=cam_pos,
                 orientation=cam_quat,
             )
@@ -692,13 +692,22 @@ class ElevatorEnv(IsaacEnv):
         # transform actions based on controller
         if self.cfg.control.control_type == "inverse_kinematics":
             # set the controller commands
+            # update ee_des_pos_base with actions
+            self.ee_des_pos_base[:,:3] += self.actions[:,6:9] * self.dt
 
-            tool_r = self.robot.data.base_dof_pos[:, 3] + self.robot.data.arm_dof_pos[:, 0]
-            tool_cmd_x = self.actions[:, 6] * torch.cos(tool_r) - self.actions[:, 7] * torch.sin(tool_r)
-            tool_cmd_y = self.actions[:, 6] * torch.sin(tool_r) + self.actions[:, 7] * torch.cos(tool_r)
-            ik_cmd = self.actions[:, 6 : 6 + 6].clone().to(device=self.device)
-            ik_cmd[:, 0] = tool_cmd_x
-            ik_cmd[:, 1] = tool_cmd_y
+            base_r = self.robot.data.base_dof_pos[:, 3]
+            ik_cmd = torch.zeros((self.num_envs, 7), device=self.device)
+            ik_cmd[:, 0:3] = self.robot.data.base_dof_pos[:, :3]
+            ik_cmd[:, 0] += self.ee_des_pos_base[:,0] * torch.cos(base_r) - self.ee_des_pos_base[:,1] * torch.sin(base_r)
+            ik_cmd[:, 1] += self.ee_des_pos_base[:,0] * torch.sin(base_r) + self.ee_des_pos_base[:,1] * torch.cos(base_r)
+            ik_cmd[:, 2] += self.ee_des_pos_base[:,2]
+            # z foward pointing in local frame
+            quat0 = torch.tensor([[math.sqrt(1/2),0.,math.sqrt(1/2),0.]], device = self.device).repeat(self.num_envs,1)
+            # rotate of base
+            quat1 = torch.stack([torch.cos(base_r/2), torch.zeros_like(base_r), torch.zeros_like(base_r), torch.sin(base_r/2)], dim=1)
+
+            ik_cmd[:, 3:7] = quat_mul(quat1, quat0)
+
             self._ik_controller.set_command(ik_cmd)
             # compute the joint commands
             self.robot_actions[
@@ -903,6 +912,7 @@ class ElevatorEnv(IsaacEnv):
                 self.cfg.control.inverse_kinematics, self.robot.count, self.device
             )
             self.num_actions = self.robot.base_num_dof + self._ik_controller.num_actions + 1
+            self.ee_des_pos_base = torch.tensor([[0.2, 0, 0.2]], device=self.device).tile((self.num_envs, 1))
         elif self.cfg.control.control_type == "default":
             self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof + 1
         elif self.cfg.control.control_type == "ohneHand":

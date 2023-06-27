@@ -199,10 +199,8 @@ class ControlCfg:
 
     # configuration loaded when control_type == "inverse_kinematics"
     inverse_kinematics: DifferentialInverseKinematicsCfg = DifferentialInverseKinematicsCfg(
-        command_type="pose_rel",
+        command_type="pose_abs",
         ik_method="dls",
-        position_command_scale=(3.0, 3.0, 3.0),
-        rotation_command_scale=(3.0, 3.0, 3.0),
     )
 
 
@@ -218,7 +216,7 @@ class ElevatorEnvCfg(IsaacEnvCfg):
     # General Settings
     # env: EnvCfg = EnvCfg(num_envs=2048, env_spacing=2.5, episode_length_s=4.0)
     env: EnvCfg = EnvCfg(num_envs=16, env_spacing=16, episode_length_s=30.0)
-    viewer: ViewerCfg = ViewerCfg(debug_vis=False, eye=(7.5, 7.5, 7.5), lookat=(0.0, 0.0, 0.0))
+    viewer: ViewerCfg = ViewerCfg(debug_vis=True, eye=(7.5, 7.5, 7.5), lookat=(0.0, 0.0, 0.0))
     # Physics settings
     sim: SimCfg = SimCfg(dt=1.0 / 60.0, substeps=1)
 

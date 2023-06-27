@@ -48,10 +48,10 @@ def pre_process_actions(cmd: torch.Tensor, gripper_command: bool) -> torch.Tenso
     # resolve gripper command
     base_dpos = torch.zeros(cmd.shape[0], 6, device=cmd.device)
     delta_pose = torch.zeros(cmd.shape[0], 6, device=cmd.device)
-    delta_pose[:, 0] = 0.5*cmd[:, 0] # tool x
+    delta_pose[:, 0] = 2*cmd[:, 2] # tool x
     base_dpos[:, 5] = - cmd[:, 1] # base yaw
-    delta_pose[:, 2] = 0.5*cmd[:, 2] # tool z
-    delta_pose[:, 5] = - cmd[:, 5] # toll yaw
+    delta_pose[:, 2] = 2*cmd[:, 0] # tool z
+    delta_pose[:, 1] = -2*cmd[:, 5] # tool y
     base_dpos[:, 2] = cmd[:, 6] # base z
     base_dpos[:, 0] = - cmd[:, 4] # base x
     base_dpos[:, 1] = cmd[:, 3] # base y
@@ -92,7 +92,6 @@ def main():
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     # modify configuration
     env_cfg.control.control_type = "inverse_kinematics"
-    env_cfg.control.inverse_kinematics.command_type = "pose_rel"
     env_cfg.terminations.episode_timeout = False
     env_cfg.terminations.is_success = False
     env_cfg.observations.low_dim.enable_corruption=False
