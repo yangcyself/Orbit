@@ -37,6 +37,7 @@ import contextlib
 import gym
 import os
 import torch
+import math
 from datetime import datetime
 
 from omni.isaac.orbit.devices import Se2Keyboard, Se3Gamepad
@@ -59,6 +60,7 @@ from omni.isaac.orbit.controllers.differential_inverse_kinematics import (
     DifferentialInverseKinematics,
     DifferentialInverseKinematicsCfg,
 )
+from omni.isaac.orbit.utils.math import quat_mul
 
 # Default arguments for actor wrappers
 ACTOR_CONFIGS = {
@@ -71,7 +73,7 @@ ACTOR_CONFIGS = {
     },
     "ik":{
         "ik_cfg":{
-            "command_type" : "position_abs",
+            "command_type" : "pose_abs",
             "ik_method" : "dls",
             "position_offset" : (0.0, 0.0, 0.0),
             "rotation_offset" : (1.0, 0.0, 0.0, 0.0) 
@@ -189,6 +191,7 @@ class IK_Actor(ActorWrapperBase):
     Wrapper for ik to provide actions
     """
     def __init__(self, env, ik_cfg):
+        from omni.isaac.orbit.markers import StaticMarker
         self.env = env
         self.robot = self.env.robot
         self.ik_control_cfg = DifferentialInverseKinematicsCfg(**ik_cfg)
@@ -196,23 +199,42 @@ class IK_Actor(ActorWrapperBase):
         self.ik_controller.initialize()
         self.ik_controller.reset_idx()
 
-        # buffers, save the need of frequent alloc and dealloc
-        self.ik_commands = torch.zeros(self.robot.count, self.ik_controller.num_actions, device=self.robot.device)
+
         # self.robot_actions = torch.ones(self.robot.count, self.robot.num_actions, device=self.robot.device)
 
         # Note: We need to update buffers before the first step for the controller.
         self.robot.update_buffers(self.env.dt)
 
+        self.cmd_marker = StaticMarker(
+            "/Visuals/ik_command", self.env.num_envs, usd_path=self.env.cfg.marker.usd_path, scale=self.env.cfg.marker.scale
+        )
+
     def get_action(self, obs):
         current_dof = self.robot.data.dof_pos
-        self.ik_commands[:] = torch.tensor([0.0, 0.0, 0.6])
-        self.ik_controller.set_command(self.ik_commands)
+        ik_cmd = torch.zeros([self.env.num_envs, 7])
+        ik_cmd[:, 0:3] = torch.tensor([[0.,0,0.6]])
+
+        base_r = self.robot.data.base_dof_pos[:, 3]
+        # z foward pointing in local frame
+        quat0 = torch.tensor([[math.sqrt(1/2),0.,math.sqrt(1/2),0.]], device = self.env.device).repeat(self.env.num_envs,1)
+        # rotate of base
+        quat1 = torch.stack([torch.cos(base_r/2), torch.zeros_like(base_r), torch.zeros_like(base_r), torch.sin(base_r/2)], dim=1)
+        ik_cmd[:, 3:7] = quat_mul(quat1, quat0)
+
+        self.ik_controller.set_command(ik_cmd)
         arm_actions  = self.ik_controller.compute(
-            self.robot.data.ee_state_w[:, 0:3],
+            self.robot.data.ee_state_w[:, 0:3] - self.env.envs_positions,
             self.robot.data.ee_state_w[:, 3:7],
             self.robot.data.ee_jacobian,
             self.robot.data.arm_dof_pos,
         )
+        arm_actions -= self.robot.data.actuator_pos_offset[:, 4:10]
+
+        ee_positions = self.ik_controller.desired_ee_pos + self.env.envs_positions
+        ee_orientations = self.ik_controller.desired_ee_rot
+        # set poses
+        self.cmd_marker.set_world_poses(ee_positions, ee_orientations)
+
         robot_actions = torch.cat([current_dof[:,:4],arm_actions],axis = 1)
         return robot_actions
 

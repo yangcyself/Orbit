@@ -739,12 +739,12 @@ class ElevatorEnv(IsaacEnv):
         elif self.cfg.control.control_type == "default":
             actions = self.actions.clone()
             if self.cfg.control.substract_action_from_obs_frame:
-                self.obs_pose_substract(actions, vx_idx=0, vy_idx=1)
+                self.obs_pose_substract(actions, px_idx=0, py_idx=1)
             self.robot_actions[:, :] = actions
         elif self.cfg.control.control_type == "ohneHand":
             actions = self.actions.clone()
             if self.cfg.control.substract_action_from_obs_frame:
-                self.obs_pose_substract(actions, vx_idx=0, vy_idx=1)
+                self.obs_pose_substract(actions, px_idx=0, py_idx=1)
             self.robot_actions[:, :-1] = actions
             self.robot_actions[:, -1] = -1.0
         # perform physics stepping
