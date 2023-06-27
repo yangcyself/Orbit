@@ -194,7 +194,8 @@ class ElevatorSm:
     def compute(self, dt: float, btn_state: torch.Tensor):
         """Compute the desired state of the robot's end-effector and the gripper."""
         # convert to warp
-        btn_state_wp = wp.from_torch(btn_state.to(self.device, dtype=torch.int32), wp.int32)
+        btn_state = btn_state.to(self.device, dtype=torch.int32)
+        btn_state_wp = wp.from_torch(btn_state, wp.int32)
         # run state machine
         wp.launch(
             kernel=infer_state_machine,
@@ -363,9 +364,33 @@ class ElevatorEnv(IsaacEnv):
         self.elevator = Elevator()
         self.buttonPanel = ButtonPanel(
             cfg=ButtonPanelCfg(
-                panel_size = (0.1, 0.2),
-                panel_grids = (1, 2),
+                panel_size = (0.3, 0.4),
+                panel_grids = (3, 4),
                 btn_cfgs=[
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_4.usd"
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_5.usd"
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_6.usd"
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_7.usd"
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_8.usd"
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_9.usd"
+                    ),
                     ButtonObjectCfg(
                         usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
                         symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_0.usd"
@@ -373,7 +398,23 @@ class ElevatorEnv(IsaacEnv):
                     ButtonObjectCfg(
                         usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
                         symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_1.usd"
-                    )
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_up.usd"
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_down.usd"
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_E.usd"
+                    ),
+                    ButtonObjectCfg(
+                        usd_path = os.path.join(os.path.join(ASSETS_DATA_DIR, "objects", "elevator", "button_obj.usd")),
+                        symbol_usd_path = "/home/chenyu/projects/2023Elevator/button/text_icons/text_left.usd"
+                    ),
                 ]
             )
         )
@@ -500,9 +541,9 @@ class ElevatorEnv(IsaacEnv):
         )
         self.buttonPanel.spawn(
             self.template_env_ns + "/ButtonPanel",
-            translation=(0, 0, 0.6),
+            translation=(0, -0.75, 0.6),
             # orientation=(1 ,0.0, 0.0 , 0.0),
-            orientation=(sqrt(1 / 2), -sqrt(1 / 2), 0.0, 0.0 ),
+            orientation=(0.0, 0.0, sqrt(1 / 2), sqrt(1 / 2)),
         )
 
         # Spawn camera

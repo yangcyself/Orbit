@@ -104,7 +104,7 @@ class ButtonObject:
                 prim_utils.create_prim(
                     self._spawn_prim_path + "/symbol/symbol",
                     usd_path=self.cfg.symbol_usd_path,
-                    translation=(0,0,0.2/30),
+                    translation=(0,0,0),
                     scale=self.cfg.scale,
                 )
         else:
