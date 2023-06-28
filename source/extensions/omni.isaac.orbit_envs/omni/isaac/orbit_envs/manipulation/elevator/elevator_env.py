@@ -418,10 +418,10 @@ class ElevatorEnv(IsaacEnv):
                     focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
                 ),
             )
-            self.camera = Camera(cfg=camera_cfg, device="cuda")
+            self.hand_camera = Camera(cfg=camera_cfg, device="cuda")
             base_camera_cfg = PinholeCameraCfg(
                 sensor_tick=0,
-                height=128,
+                height=160,
                 width=160,
                 data_types=["rgb", "semantic_segmentation"],
                 # FOV = 2 * arctan(horizontal_aperture / (2 * focal_length))
@@ -445,7 +445,7 @@ class ElevatorEnv(IsaacEnv):
             else:
                 self.goal_camera = None
         else:
-            self.camera = None
+            self.hand_camera = None
             self.base_camera = None
 
         # initialize the base class to setup the scene.
@@ -460,9 +460,9 @@ class ElevatorEnv(IsaacEnv):
         # An array to keep track which frame is this it. # traj_id, frame_id
         self.debug_tracker = torch.zeros((self.num_envs, 2), dtype = torch.int32, device=self.device)
 
-        assert (self.base_camera is None or self.camera is not None), "camera must exist if base_camera exists"
-        assert (self.num_envs == 1 or self.camera is None), "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
-        assert (self.enable_render or self.camera is None), "ElevatorEnv need `headless=False` if camera is wanted"
+        assert (self.base_camera is None or self.hand_camera is not None), "camera must exist if base_camera exists"
+        assert (self.num_envs == 1 or self.hand_camera is None), "ElevatorEnv only supports num_envs=1 Otherwise camera shape is wrong"
+        assert (self.enable_render or self.hand_camera is None), "ElevatorEnv need `headless=False` if camera is wanted"
         # prepare the observation manager
         obs_cfg_dict = class_to_dict(self.cfg.observations)
         obs_cfg_dict = {k: v for k, v in obs_cfg_dict.items() if k in self.modalities}
@@ -509,8 +509,8 @@ class ElevatorEnv(IsaacEnv):
         btn_state = self.elevator.update_buffers(self.buttonPanel.get_state_env_any(), self.dt)
         self.buttonPanel.set_state_env_all(0, None, torch.nonzero(~btn_state).flatten())
         self.buttonPanel.update_buffers(self.dt)
-        if(self.camera is not None):
-            self.camera.update(dt=self.dt)
+        if(self.hand_camera is not None):
+            self.hand_camera.update(dt=self.dt)
         if(self.base_camera is not None):
             self.base_camera.update(dt=self.dt)
 
@@ -536,7 +536,7 @@ class ElevatorEnv(IsaacEnv):
         )
 
         # Spawn camera
-        if(self.camera is not None):
+        if(self.hand_camera is not None):
             up_axis = Gf.Vec3d(0, -1, 0)
             eye_position = Gf.Vec3d(0.05, -0.1, 0.1)
             target_position = Gf.Vec3d(10, 0, 0)
@@ -545,7 +545,7 @@ class ElevatorEnv(IsaacEnv):
             matrix_gf = matrix_gf.GetInverse()
             cam_pos = np.array(matrix_gf.ExtractTranslation())
             cam_quat = gf_quat_to_np_array(matrix_gf.ExtractRotationQuat())
-            self.camera.spawn(
+            self.hand_camera.spawn(
                 self.template_env_ns + "/Robot/dynaarm_ELBOW" + "/CameraSensor",
                 translation=cam_pos,
                 orientation=cam_quat,
@@ -717,8 +717,8 @@ class ElevatorEnv(IsaacEnv):
         btn_state = self.elevator.update_buffers(self.buttonPanel.get_state_env_any(), self.dt)
         self.buttonPanel.set_state_env_all(0, None, torch.nonzero(~btn_state).flatten())
         self.buttonPanel.update_buffers(self.dt)
-        if(self.camera is not None):
-            self.camera.update(dt=self.dt)
+        if(self.hand_camera is not None):
+            self.hand_camera.update(dt=self.dt)
         if(self.base_camera is not None):
             self.base_camera.update(dt=self.dt)
 
@@ -759,7 +759,10 @@ class ElevatorEnv(IsaacEnv):
         obs_dict = {}
         for k,v in self.cfg.observation_grouping.items():
             if(type(v) == list):
-                obs_dict[k] = {k3: obs[k2][k3] for k2 in v for k3 in obs[k2].keys()}
+                if(self.return_dict_obs_in_group):
+                    obs_dict[k] = {k3: obs[k2][k3] for k2 in v for k3 in obs[k2].keys()}
+                else:
+                    obs_dict[k] = {k2: obs[k2] for k2 in v}
             elif(type(v) == str):
                 obs_dict[k] = obs[v]
             else:
@@ -852,11 +855,10 @@ class ElevatorEnv(IsaacEnv):
         self.rigidContacts = RigidContactView(self.env_ns + "/.*/Elevator/.*", [], prepare_contact_sensors=False, apply_rigid_body_api=False)
         self.rigidContacts.initialize()
 
-        if(self.camera is not None):
-            self.camera.initialize()
+        if(self.hand_camera is not None):
+            self.hand_camera.initialize()
         if(self.base_camera is not None):
             self.base_camera.initialize()
-        # self.camera.initialize(self.env_ns + "/.*/Robot/panda_hand/CameraSensor/Camera")
         if(self.goal_camera is not None):
             self.goal_camera.initialize()
 
@@ -1020,9 +1022,9 @@ class ElevatorEnv(IsaacEnv):
             mode (str, optional): The mode to render with. Defaults to "human".
         """
         rgb_data = super(ElevatorEnv, self).render(mode)
-        if(mode == "rgb_array" and self.camera is not None):
+        if(mode == "rgb_array" and self.hand_camera is not None):
             assert rgb_data is not None
-            cam_data = (wp.torch.to_torch(self.camera.data.output["rgb"])[:, :, :3]).to(self.device).numpy()
+            cam_data = (wp.torch.to_torch(self.hand_camera.data.output["rgb"])[:, :, :3]).to(self.device).numpy()
             # Calculate the height difference
             height_diff = rgb_data.shape[0] - cam_data.shape[0]
             # Pad the smaller image with zeros at the bottom
@@ -1101,6 +1103,57 @@ class ElevatorEnv(IsaacEnv):
         return return_dict
         
 
+    # Functions for cameras
+    def update_cameras(self):
+        """Manually update the cameras. This is used to prevent camera lags
+        For example used in demoCollection
+        """
+        self.hand_camera.update(dt=self.dt)
+        self.base_camera.update(dt=self.dt)
+
+    def get_camera_rgb(self, cam_name):
+        """RGB camera observations.
+            cam_name: the name of the camera in environment
+        type uint8 and be stored in channel-last (H, W, C) format.
+        """
+        try:
+            camera = eval(f"self.{cam_name}")
+        except Exception as e:
+            raise ValueError(f"failed get camera {cam_name}")
+        image_shape = camera.image_shape
+        if camera.data.output["rgb"] is None:
+            return torch.zeros((self.num_envs, image_shape[0], image_shape[1], 3), device=self.device)
+        else:
+            return (wp.torch.to_torch(camera.data.output["rgb"])[None, :, :, :3]).to(self.device)
+
+    # Functions to get 
+    def get_camera_semantic(self, cam_name, class_names=None):
+        """Semantic camera observations.
+        type uint8 and be stored in channel-last (H, W, C) format.
+        class_names: a list of tuples, each tuple contains the names for the channel of the output
+        """
+        camera = eval(f"self.{cam_name}")
+        class_names = [] if class_names is None else class_names
+        num_classes = len(class_names)
+        image_shape = camera.image_shape
+        if camera.data.output["semantic_segmentation"] is None:
+            return torch.zeros((self.num_envs, image_shape[0], image_shape[1], num_classes), dtype=torch.bool, device=self.device)
+        else:
+            idToLabels = camera.data.output["semantic_segmentation"]['info']["idToLabels"]
+            labelToIds = {label["class"]: int(idx) for idx, label in idToLabels.items()}
+            data = wp.torch.to_torch(camera.data.output["semantic_segmentation"]['data'])[None, :, :].squeeze(3) # n_env, H, W
+            channels = []
+            for labels in class_names:
+                # Combine binary masks for each label in the group
+                binary_mask = torch.zeros_like(data, dtype=torch.bool)
+                for label in labels:
+                    idx = labelToIds.get(label)
+                    if idx is not None:
+                        binary_mask = binary_mask | (data == idx)
+                # Append to the list
+                channels.append(binary_mask)
+            return torch.stack(channels,dim=3).to(self.device) # n_env, H, W, C
+
 class ElevatorObservationManager(ObservationManager):
     """Reward manager for single-arm reaching environment."""
 
@@ -1163,38 +1216,27 @@ class ElevatorObservationManager(ObservationManager):
         """RGB camera observations.
         type uint8 and be stored in channel-last (H, W, C) format.
         """
-        image_shape = env.camera.image_shape
-        if env.camera.data.output["rgb"] is None:
-            return torch.zeros((env.num_envs, image_shape[0], image_shape[1], 3), device=env.device)
-        else:
-            return (wp.torch.to_torch(env.camera.data.output["rgb"])[None, :, :, :3]).to(env.device)
+        return env.get_camera_rgb("hand_camera")
+
+    def base_camera_rgb(self, env: ElevatorEnv):
+        """RGB camera observations.
+        type uint8 and be stored in channel-last (H, W, C) format.
+        """
+        return env.get_camera_rgb("base_camera")
 
     def hand_camera_semantic(self, env: ElevatorEnv, class_names=None):
         """Semantic camera observations.
         type uint8 and be stored in channel-last (H, W, C) format.
         class_names: a list of tuples, each tuple contains the names for the channel of the output
         """
-        class_names = [] if class_names is None else class_names
-        num_classes = len(class_names)
-        image_shape = env.camera.image_shape
-        if env.camera.data.output["semantic_segmentation"] is None:
-            return torch.zeros((env.num_envs, image_shape[0], image_shape[1], num_classes), dtype=torch.bool, device=env.device)
-        else:
-            idToLabels = env.camera.data.output["semantic_segmentation"]['info']["idToLabels"]
-            labelToIds = {label["class"]: int(idx) for idx, label in idToLabels.items()}
-            data = wp.torch.to_torch(env.camera.data.output["semantic_segmentation"]['data'])[None, :, :].squeeze(3) # n_env, H, W
-            channels = []
-            for labels in class_names:
-                # Combine binary masks for each label in the group
-                binary_mask = torch.zeros_like(data, dtype=torch.bool)
-                for label in labels:
-                    idx = labelToIds.get(label)
-                    if idx is not None:
-                        binary_mask = binary_mask | (data == idx)
-                # Append to the list
-                channels.append(binary_mask)
-            return torch.stack(channels,dim=3).to(env.device) # n_env, H, W, C
+        return env.get_camera_semantic("hand_camera", class_names)
 
+    def base_camera_semantic(self, env: ElevatorEnv, class_names=None):
+        """Semantic camera observations.
+        type uint8 and be stored in channel-last (H, W, C) format.
+        class_names: a list of tuples, each tuple contains the names for the channel of the output
+        """
+        return env.get_camera_semantic("base_camera", class_names)
 
     def actions(self, env: ElevatorEnv):
         """Last actions provided to env."""

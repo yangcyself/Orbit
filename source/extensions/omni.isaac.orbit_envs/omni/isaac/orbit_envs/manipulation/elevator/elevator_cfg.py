@@ -137,10 +137,15 @@ class ObservationsCfg:
     @configclass
     class RGBCfg:
         hand_camera_rgb = {}
+        base_camera_rgb = {}
 
     @configclass
     class SemanticCfg:
         hand_camera_semantic = {"class_names":[
+            ("button-up", "button-down"), # first channel
+            ('button-panel', "button-up", "button-down") # second channel
+        ]}
+        base_camera_semantic = {"class_names":[
             ("button-up", "button-down"), # first channel
             ('button-panel', "button-up", "button-down") # second channel
         ]}

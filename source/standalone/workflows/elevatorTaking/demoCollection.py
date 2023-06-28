@@ -397,7 +397,7 @@ def main():
                 # wait the visibility resetting of the robot to take effect
                 for i in range(5):
                     env.sim.step()
-                env.camera.update(dt=env.dt)
+                env.update_cameras()
                 obs = env.get_observations()
                 obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 
