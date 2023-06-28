@@ -225,6 +225,7 @@ class ButtonPanel:
             num_target buttons are labeled as `class: button_target`
             others are labeled as `class: button`
         """
+        self._data.nTargets = numTarget
         for i, btnrank in enumerate(self._data.buttonRanking):
             for j in btnrank[:numTarget]:
                 prim = prim_utils.get_prim_at_path(self._spawn_prim_path[i]+f"/Button_{j}")
@@ -239,14 +240,18 @@ class ButtonPanel:
         """Get button state and reduce them within env (with any).
         btn_ids: The indices of the button to get state from. Defaults to None (all buttons).
                   The indices are counted from 0 for each environment.
+                  If it is a 2D Matrix, it means each environment has different set of targets
         Returns:
             torch.tensor: The button state.
         """
-        
-        states = self.button.data.btn_state.view(self.env_count, self.btn_per_env)
-        if btn_ids is None:
-            btn_ids = ...
-        return states[:, btn_ids].any(dim=1)
+        if(type(btn_ids) == torch.Tensor and len(btn_ids.shape) == 2):
+            states = self.button.data.btn_state.view(self.env_count, self.btn_per_env)
+            return states.gather(1, btn_ids).any(dim=1)
+        else:
+            states = self.button.data.btn_state.view(self.env_count, self.btn_per_env)
+            if btn_ids is None:
+                btn_ids = ...
+            return states[:, btn_ids].any(dim=1)
     
     def set_state_env_all(self, s:int = 0, btn_ids: Optional[Sequence[int]] = None, env_ids:Optional[Sequence[int]] = None):
         """Set button state and reduce them within env (with all).

@@ -457,6 +457,10 @@ class ElevatorEnv(IsaacEnv):
 
         # An array to record if the robot has pushed the button in the episode
         self._hasdone_pushbtn = torch.zeros((self.num_envs, ), dtype = bool, device=self.device)
+        # An array to record if the robot has pushed the target buttons
+        self._hasdone_pushCorrect = torch.zeros((self.num_envs, ), dtype = bool, device=self.device) 
+        # An array to record if the robot has pushed the non-target buttons
+        self._hasdone_pushWrong = torch.zeros((self.num_envs, ), dtype = bool, device=self.device) 
         # An array to keep track which frame is this it. # traj_id, frame_id
         self.debug_tracker = torch.zeros((self.num_envs, 2), dtype = torch.int32, device=self.device)
 
@@ -551,10 +555,18 @@ class ElevatorEnv(IsaacEnv):
                 orientation=cam_quat,
             )
         if(self.base_camera is not None):
+            up_axis = Gf.Vec3d(-1, 0, 0)
+            eye_position = Gf.Vec3d(0.3, 0, 0.2)
+            target_position = Gf.Vec3d(3, 0, 0.8)
+            matrix_gf = Gf.Matrix4d(1).SetLookAt(eye_position, target_position, up_axis)
+            # camera position and rotation in world frame
+            matrix_gf = matrix_gf.GetInverse()
+            cam_pos = np.array(matrix_gf.ExtractTranslation())
+            cam_quat = gf_quat_to_np_array(matrix_gf.ExtractRotationQuat())
             self.base_camera.spawn(
                 self.template_env_ns + "/Robot/base" + "/CameraSensor",
-                translation=(0.3, 0, 0.2),
-                orientation=(-0.5, -0.5, 0.5, 0.5),
+                translation=cam_pos,
+                orientation=cam_quat,
             )
         if(self.goal_camera is not None):
             self.goal_camera.spawn(
@@ -615,6 +627,8 @@ class ElevatorEnv(IsaacEnv):
         self.episode_length_buf[env_ids] = 0
         # -- Success reset
         self._hasdone_pushbtn[env_ids] = False
+        self._hasdone_pushCorrect[env_ids] = False # has pushed the target buttons
+        self._hasdone_pushWrong[env_ids] = False # has pushed the target buttons
         self.debug_tracker[env_ids, 0] = torch.randint(0, int(1e9), (len(env_ids),)).to(device=self.device,dtype=torch.int32)
         self.debug_tracker[env_ids, 1] = 0
 
@@ -727,6 +741,14 @@ class ElevatorEnv(IsaacEnv):
         # -- compute mid-level states # this should happen before reward, termination, observation and success
         elevator_state = self.elevator._sm_state.to(self.device)
         self._hasdone_pushbtn = torch.where(self.buttonPanel.get_state_env_any(), True, self._hasdone_pushbtn)
+        self._hasdone_pushCorrect = torch.where(self.buttonPanel.get_state_env_any(
+                self.buttonPanel.data.buttonRanking[:,:self.buttonPanel.data.nTargets]
+            ), True, self._hasdone_pushCorrect
+        )
+        self._hasdone_pushWrong = torch.where(self.buttonPanel.get_state_env_any(
+                self.buttonPanel.data.buttonRanking[:,self.buttonPanel.data.nTargets:]
+            ), True, self._hasdone_pushWrong
+        )
         self.debug_tracker[:,1] += 1
 
         # -- compute MDP signals
@@ -918,19 +940,21 @@ class ElevatorEnv(IsaacEnv):
     """
     Helper functions - MDP.
     """
-
     def _check_termination(self) -> None:
         # extract values from buffer
         # compute resets
         self.reset_buf[:] = 0
         # -- episode length
+        success_dict = self.is_success()
         if self.cfg.terminations.is_success:
-            self.reset_buf = torch.where(self.is_success()["task"].to(dtype = bool), 1, self.reset_buf)
+            self.reset_buf = torch.where(success_dict["task"].to(dtype = bool), 1, self.reset_buf)
         if self.cfg.terminations.episode_timeout:
             self.reset_buf = torch.where(self.episode_length_buf >= self.max_episode_length, 1, self.reset_buf)
         if self.cfg.terminations.collision:
             collid = self.rigidContacts.get_net_contact_forces().abs().sum(axis = -1).reshape(self.num_envs,-1).sum(axis = -1)
             self.reset_buf = torch.where(collid > 10., 1, self.reset_buf)
+        for cond in self.cfg.terminations.extra_conditions:
+            self.reset_buf = torch.where(success_dict.get(cond, torch.tensor(False)).to(dtype=bool), 1, self.reset_buf)
 
     def _randomize_robot_initial_pose(self, env_ids: torch.Tensor):
         if(self.cfg.initialization.robot.position_cat=="uniform"):
@@ -970,8 +994,11 @@ class ElevatorEnv(IsaacEnv):
         """
         robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
         success_dict = {"enter_elevator": torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0),    
-                    "pushed_btn": torch.where(self._hasdone_pushbtn, 1, 0)
-                }
+                        "pushed_btn": torch.where(self._hasdone_pushbtn, 1, 0),
+                        "pushed_correct": torch.where(self._hasdone_pushCorrect, 1, 0),
+                        "pushed_wrong": torch.where(self._hasdone_pushWrong, 1, 0),
+                        "pushed_perfect": torch.where(self._hasdone_pushCorrect & (~self._hasdone_pushWrong), 1, 0),
+                        }
         if type(self.cfg.terminations.is_success) == str:
             success_dict["task"] = success_dict[self.cfg.terminations.is_success]
         else:

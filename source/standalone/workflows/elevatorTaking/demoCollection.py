@@ -122,7 +122,7 @@ class ActorWrapperBase:
     """
     def get_action(self, obs):
         raise NotImplementedError
-    def reset(self, env_ids = None):
+    def reset_idx(self, env_ids = None):
         raise NotImplementedError
 
 class RslRlActor(ActorWrapperBase):
@@ -147,7 +147,7 @@ class RslRlActor(ActorWrapperBase):
             action = self.policy(obs_rsl)
             return action
     
-    def reset(self, env_ids = None):
+    def reset_idx(self, env_ids = None):
         pass
 
 class HumanActor(ActorWrapperBase):
@@ -186,7 +186,7 @@ class HumanActor(ActorWrapperBase):
         # compute actions based on environment
         return pre_process_actions(base_cmd, delta_pose, gripper_command)
     
-    def reset(self, env_ids = None):
+    def reset_idx(self, env_ids = None):
         pass
 
     
@@ -215,10 +215,8 @@ class IK_Actor(ActorWrapperBase):
     def get_action(self, obs):
         current_dof = self.robot.data.dof_pos
         ik_cmd = torch.zeros([self.env.num_envs, 7])
-
-        target_pos = self.env.buttonPanel.get_rank1_button_pose_w()[:, 0:3]
-        target_pos[:,1] -= 0.005
-        ik_cmd[:, 0:3] = target_pos
+        self.current_target_pos = 0.05 * self.target_pos + 0.95 * self.current_target_pos
+        ik_cmd[:, 0:3] = self.current_target_pos
 
         base_r = self.robot.data.base_dof_pos[:, 3]
         # z foward pointing in local frame
@@ -241,11 +239,26 @@ class IK_Actor(ActorWrapperBase):
         # set poses
         self.cmd_marker.set_world_poses(ee_positions, ee_orientations)
 
-        robot_actions = torch.cat([current_dof[:,:4],arm_actions],axis = 1)
+        base_actions = 0.8 * current_dof[:,:4] + 0.2 * self.target_base_pose
+        robot_actions = torch.cat([base_actions, arm_actions],axis = 1)
         return robot_actions
 
-    def reset(self, env_ids = None):
+    def reset_idx(self, env_ids = None):
+        """Assume this function is called after env.reset()
+            Set target base pose for action generation
+        """
         self.ik_controller.reset_idx(env_ids)
+        self.target_pos = self.env.buttonPanel.get_rank1_button_pose_w()[:, 0:3]
+        self.target_pos[:,1] -= 0.01
+        self.current_target_pos = self.target_pos.clone()
+        self.current_target_pos[:,1] += 0.35
+        # self.target_pos += torch.randn_like(self.target_pos) * 0.005
+        self.target_base_pose = torch.zeros([self.env.num_envs, 4], device = self.env.device)
+        self.target_base_pose[:,0] = self.target_pos[:,0]
+        self.target_base_pose[:,2] = self.target_pos[:,2] - 0.4
+        self.target_base_pose[:,3] = -math.pi/2
+        self.target_base_pose[:,:3] += torch.randn_like(self.target_base_pose[:,:3]) * 0.005
+        self.target_base_pose[:,3] += torch.randn_like(self.target_base_pose[:,3]) * 0.01
 
 def main():
     """Collect demonstrations from the environment using teleop interfaces."""
@@ -256,7 +269,8 @@ def main():
     env_cfg.env.episode_length_s = 5.
     
     env_cfg.terminations.episode_timeout = True
-    env_cfg.terminations.is_success = "pushed_btn"
+    env_cfg.terminations.is_success = "pushed_perfect"
+    env_cfg.terminations.extra_conditions = ["pushed_btn"]
     env_cfg.terminations.collision = True
     env_cfg.observations.return_dict_obs_in_group = True
     # temp config only for RSLRL collection
@@ -327,6 +341,7 @@ def main():
     collector_interface.reset()
     for key, value in goal_dict.items():
         collector_interface.add(f"obs/goal:{key}", value)
+    actor.reset_idx()
 
     # simulate environment
     with contextlib.suppress(KeyboardInterrupt):
@@ -403,7 +418,7 @@ def main():
 
                 for key, value in goal_dict.items():
                     collector_interface.add(f"obs/goal:{key}", value)
-
+                actor.reset_idx(done_env_ids)
     # close the simulator
     collector_interface.close()
     env.close()

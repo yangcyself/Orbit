@@ -70,7 +70,6 @@ class InitializationCfg:
         """
         num_target_max = 1 # the max number of buttons with semantic: button_target
 
-
     @configclass
     class ElevatorStateCfg:
         """Initial state of the elevator
@@ -220,13 +219,14 @@ class RewardsCfg:
 
 @configclass
 class TerminationsCfg:
-    """Termination terms for the MDP."""
-
+    """Termination terms for the MDP.
+        cfg.terminations
+    """
     episode_timeout = True  # reset when episode length ended
     is_success = "enter_elevator"  # reset when robot is in elevator
     is_success_threshold = 0.5  # distance to elevator center
     collision = True  # reset when robot collides with the elevator
-
+    extra_conditions = []
 
 @configclass
 class ControlCfg:

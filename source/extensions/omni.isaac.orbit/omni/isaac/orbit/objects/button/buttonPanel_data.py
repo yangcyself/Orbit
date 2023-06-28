@@ -14,3 +14,5 @@ class ButtonPanelData:
     # Just a Nenv x Nbtn random perm matrix
     # Just to give some randomness to the choice of buttons
     buttonRanking = None
+    # The first `nTargets` buttons in ranking are targets
+    nTargets = 0
