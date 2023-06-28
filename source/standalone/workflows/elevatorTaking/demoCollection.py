@@ -347,7 +347,7 @@ def main():
 
             # -- actions
             actions_to_collect = actions.clone()
-            env.obs_pose_add(actions_to_collect, vx_idx=0, vy_idx=1)
+            env.obs_pose_add(actions_to_collect, px_idx=0, py_idx=1, pr_idx=3)
             collector_interface.add("actions", actions_to_collect)
             # perform action on environment
             obs, rewards, dones, info = env.step(actions)

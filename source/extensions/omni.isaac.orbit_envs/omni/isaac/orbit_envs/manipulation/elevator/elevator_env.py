@@ -739,7 +739,7 @@ class ElevatorEnv(IsaacEnv):
         elif self.cfg.control.control_type == "default":
             actions = self.actions.clone()
             if self.cfg.control.substract_action_from_obs_frame:
-                self.obs_pose_substract(actions, px_idx=0, py_idx=1)
+                self.obs_pose_subtract(actions, px_idx=0, py_idx=1, pr_idx=3)
             self.robot_actions[:, :] = actions
         # perform physics stepping
         for _ in range(self.cfg.control.decimation):
@@ -1014,8 +1014,8 @@ class ElevatorEnv(IsaacEnv):
         if(px_idx is not None and py_idx is not None):
             ##! the clones are necessary to avoid in-place operations
             px,py = input_vec[:, px_idx].clone(), input_vec[:, py_idx].clone()
-            input_vec[:, px_idx] = px * torch.cos(r) - py * torch.sin(r)
-            input_vec[:, py_idx] = px * torch.sin(r) + py * torch.cos(r)
+            input_vec[:, px_idx] = x + px * torch.cos(r) - py * torch.sin(r)
+            input_vec[:, py_idx] = y + px * torch.sin(r) + py * torch.cos(r)
         if(pr_idx is not None):
             input_vec[:, pr_idx] = r + input_vec[:, pr_idx]
         if(vx_idx is not None and vy_idx is not None):
@@ -1025,7 +1025,7 @@ class ElevatorEnv(IsaacEnv):
             input_vec[:, vy_idx] = vx * torch.sin(r) + vy * torch.cos(r)
 
 
-    def obs_pose_substract(self, input_vec, px_idx=None, py_idx=None, pr_idx=None, vx_idx=None, vy_idx=None):
+    def obs_pose_subtract(self, input_vec, px_idx=None, py_idx=None, pr_idx=None, vx_idx=None, vy_idx=None):
         """Minus the pose of the observation frame to the observation """
         x,y,r = self._obs_shift_w[:, 0], self._obs_shift_w[:, 1], self._obs_shift_w[:, 2]
         if(px_idx is not None and py_idx is not None):
@@ -1033,7 +1033,8 @@ class ElevatorEnv(IsaacEnv):
             input_vec[:, px_idx] = (px - x) * torch.cos(r) + (py - y) * torch.sin(r)
             input_vec[:, py_idx] = -(px - x) * torch.sin(r) + (py - y) * torch.cos(r)
         if(pr_idx is not None):
-            input_vec[:, pr_idx] = pr - input_vec[:, pr_idx]
+            pr = input_vec[:, pr_idx].clone()
+            input_vec[:, pr_idx] = pr - r
         if(vx_idx is not None and vy_idx is not None):
             vx,vy = input_vec[:, vx_idx].clone(), input_vec[:, vy_idx].clone()
             input_vec[:, vx_idx] = vx * torch.cos(r) + vy * torch.sin(r)

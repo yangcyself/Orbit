@@ -238,17 +238,17 @@ def playback_trajectory_with_env(
             if i < traj_len - 1:
                 # check whether the actions deterministically lead to the same recorded states
                 state_playback = env.get_state()
-                # print("states[i+1]", states[i+1])
-                # print("state_playback",state_playback)
                 if(args.debug and (pad_mask is None or pad_mask[i+1]>0)):
+                    # assert the debug_info state is the same
                     assert (states[i+1][-2:].type(torch.int32) == state_playback[:,-2:].type(torch.int32)).all()
                     assert (states[i+1][-2:].type(torch.int32) == obs_dict['debug:debug_info'][i+1].type(torch.int32)).all()
                     assert (states[i+1][-2:].type(torch.int32) == obs['debug:debug_info'].type(torch.int32)).all()
-                err = (states[i + 1] - state_playback.squeeze(0)).abs().max()
-                if ((err > 1e-4) and (pad_mask is None or pad_mask[i+1]>0)):
-                    print("warning: playback diverged by {} at step {}".format(err, i))
-                    # print("states:", states[i + 1])
-                    # print("state_playback", state_playback)
+                err = (states[i + 1] - state_playback.squeeze(0)).abs()
+                if ((err.max() > 1e-4) and (pad_mask is None or pad_mask[i+1]>0)):
+                    print("warning: playback diverged by {} at step {}".format(err.max(), i))
+                    print("Diverge at index:", torch.where(err>1e-4))
+                    print("states:", states[i + 1][torch.where(err>1e-4)])
+                    print("state_playback", state_playback.squeeze(0)[torch.where(err>1e-4)])
 
                 if(args.debug and (pad_mask is None or pad_mask[i+1]>0)):
                     # check all the obs are the same
