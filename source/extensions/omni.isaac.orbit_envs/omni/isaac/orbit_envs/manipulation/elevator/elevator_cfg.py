@@ -9,7 +9,7 @@ from omni.isaac.orbit.robots.config.alma import ALMA_CFG
 from omni.isaac.orbit.robots.mobile_manipulator import MobileManipulatorCfg
 from omni.isaac.orbit.utils import configclass
 from omni.isaac.orbit.utils.assets import ISAAC_NUCLEUS_DIR, ASSET_NUCLEUS_DIR
-
+from omni.isaac.assets import ASSETS_DATA_DIR
 from omni.isaac.orbit_envs.isaac_env_cfg import EnvCfg, IsaacEnvCfg, SimCfg, ViewerCfg
 import math
 ##
@@ -27,6 +27,20 @@ class MarkerCfg:
     scale = [0.1, 0.1, 0.1]  # x,y,z
 
 
+@configclass
+class ButtonPanelCfg:
+    """Properties for the button panel in the scene
+        cfg.buttonPanel
+    """
+    nx = 3
+    ny = 4
+    grid_size = 0.1
+    usd_path = f"{ASSETS_DATA_DIR}/objects/elevator/button_obj.usd"
+    usd_symbol_root =  f"{ASSETS_DATA_DIR}/objects/elevator/text_icons"
+    symbols = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "up", "down"]
+    translation = (0, -0.75, 1.2)
+    orientation = (0.0, 0.0, math.sqrt(1 / 2), math.sqrt(1 / 2))
+
 ##
 # MDP settings
 ##
@@ -34,11 +48,15 @@ class MarkerCfg:
 
 @configclass
 class InitializationCfg:
-    """configuration of the initialization of the Env."""
+    """configuration of the initialization of the Env.
+       cfg.initialization
+    """
 
     @configclass
     class RobotPosCfg:
-        """Initposition of the robot."""
+        """Initposition of the robot.
+           cfg.initialization.robot
+        """
         # category
         position_cat: str = "default"  # randomize position: "default", "uniform"
         # randomize position
@@ -47,6 +65,9 @@ class InitializationCfg:
     
     @configclass
     class ElevatorStateCfg:
+        """Initial state of the elevator
+            cfg.initialization.elevator
+        """
         moving_elevator_prob = 0.4
         nonzero_floor_prob = 1.
         max_init_wait_time = 25.
@@ -54,6 +75,9 @@ class InitializationCfg:
 
     @configclass
     class SceneCfg:
+        """Randomization with replicator and Randomization of obs frame
+            cfg.initialization.scene
+        """
         # the range of the random pose of the obs frame
         obs_frame_bias_range = [40.0, 40.0, math.pi]
         enable_replicator = True
@@ -223,6 +247,7 @@ class ElevatorEnvCfg(IsaacEnvCfg):
     # Scene Settings
     robot: MobileManipulatorCfg = ALMA_CFG
     marker: MarkerCfg = MarkerCfg()
+    buttonPanel: ButtonPanelCfg = ButtonPanelCfg()
 
     # MDP settings
     observations: ObservationsCfg = ObservationsCfg()

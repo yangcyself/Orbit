@@ -36,6 +36,7 @@ simulation_app = SimulationApp(config)
 import contextlib
 import gym
 import os
+import sys
 import torch
 import math
 from datetime import datetime
@@ -61,6 +62,9 @@ from omni.isaac.orbit.controllers.differential_inverse_kinematics import (
     DifferentialInverseKinematicsCfg,
 )
 from omni.isaac.orbit.utils.math import quat_mul
+
+sys.path.append(os.path.dirname(__file__))
+from utils.env_presets import modify_cfg_to_task_push_btn
 
 # Default arguments for actor wrappers
 ACTOR_CONFIGS = {
@@ -213,6 +217,7 @@ class IK_Actor(ActorWrapperBase):
         ik_cmd = torch.zeros([self.env.num_envs, 7])
 
         target_pos = self.env.buttonPanel.get_button_pose_w()[:, 0, 0:3]
+        target_pos[:,1] -= 0.005
         ik_cmd[:, 0:3] = target_pos
 
         base_r = self.robot.data.base_dof_pos[:, 3]
@@ -247,11 +252,8 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     # modify configuration
+    modify_cfg_to_task_push_btn(env_cfg)
     env_cfg.env.episode_length_s = 5.
-    env_cfg.initialization.elevator.max_init_floor = 5 # wait for at most 5 seconds
-    env_cfg.initialization.elevator.moving_elevator_prob = 0 # wait for at most 5 seconds
-    env_cfg.initialization.elevator.nonzero_floor_prob = 1 # wait for at most 5 seconds
-
     
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = "pushed_btn"
