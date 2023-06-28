@@ -64,7 +64,7 @@ from omni.isaac.orbit.controllers.differential_inverse_kinematics import (
 from omni.isaac.orbit.utils.math import quat_mul
 
 sys.path.append(os.path.dirname(__file__))
-from utils.env_presets import modify_cfg_to_task_push_btn
+from utils.env_presets import modify_cfg_to_task_push_btn, modify_cfg_to_robomimic
 
 # Default arguments for actor wrappers
 ACTOR_CONFIGS = {
@@ -264,24 +264,21 @@ class IK_Actor(ActorWrapperBase):
             Set target base pose for action generation
         """
         self.ik_controller.reset_idx(env_ids)
-        self.target_pos = self.env.buttonPanel.get_rank1_button_pose_w()[:, 0:3]
-        self.target_pos[:,0] += self.actor_cfg["ee_target_end_bias"][0]
-        self.target_pos[:,1] += self.actor_cfg["ee_target_end_bias"][1]
-        self.target_pos[:,2] += self.actor_cfg["ee_target_end_bias"][2]
-        self.current_target_pos = self.target_pos.clone()
-        self.current_target_pos[:,0] += self.actor_cfg["ee_target_init_bias"][0] # make target appear in the FOV
-        self.current_target_pos[:,1] += self.actor_cfg["ee_target_init_bias"][1]
-        self.current_target_pos[:,2] += self.actor_cfg["ee_target_init_bias"][2] # make target appear in the FOV
-        self.target_base_pose = torch.zeros([self.env.num_envs, 4], device = self.env.device)
-        self.target_base_pose[:,0] = self.target_pos[:,0] + self.actor_cfg["base_target_end_bias"][0]
-        self.target_base_pose[:,1] = self.target_pos[:,1] + self.actor_cfg["base_target_end_bias"][1]
-        self.target_base_pose[:,2] = self.target_pos[:,2] + self.actor_cfg["base_target_end_bias"][2]
-        self.target_base_pose[:,3] = -math.pi/2
-        for i in range(3):
-            self.target_pos[:,i] += torch.randn_like(self.target_pos[:,i]) * self.actor_cfg["ee_target_end_std"][i]
-        for i in range(4):
-            self.target_base_pose[:,i] += torch.randn_like(self.target_base_pose[:,i]) * self.actor_cfg["base_target_end_std"][i]
+        self.target_pos = self.env.buttonPanel.get_rank1_button_pose_w()[:, :3]
+        self.target_pos += torch.Tensor(self.actor_cfg["ee_target_end_bias"]).unsqueeze(0)
 
+        self.current_target_pos = self.target_pos.clone()
+        self.current_target_pos += torch.Tensor(self.actor_cfg["ee_target_init_bias"]).unsqueeze(0)
+
+        self.target_base_pose = torch.zeros([self.env.num_envs, 4], device=self.env.device)
+        self.target_base_pose[:, :3] = self.target_pos.clone().add_(torch.Tensor(self.actor_cfg["base_target_end_bias"]).unsqueeze(0))
+        self.target_base_pose[:, 3] = -math.pi/2
+
+        noise_target_pos = torch.randn_like(self.target_pos) * torch.Tensor(self.actor_cfg["ee_target_end_std"]).unsqueeze(0)
+        self.target_pos += noise_target_pos
+
+        noise_target_base_pose = torch.randn_like(self.target_base_pose) * torch.Tensor(self.actor_cfg["base_target_end_std"]).unsqueeze(0)
+        self.target_base_pose += noise_target_base_pose
 
 def main():
     """Collect demonstrations from the environment using teleop interfaces."""
@@ -289,20 +286,16 @@ def main():
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     # modify configuration
     modify_cfg_to_task_push_btn(env_cfg)
+    modify_cfg_to_robomimic(env_cfg)
     env_cfg.env.episode_length_s = 5.
-    
-    env_cfg.terminations.episode_timeout = True
-    env_cfg.terminations.is_success = "pushed_perfect"
-    env_cfg.terminations.extra_conditions = ["pushed_btn"]
-    env_cfg.terminations.collision = True
     env_cfg.observations.return_dict_obs_in_group = True
     # temp config only for RSLRL collection
     env_cfg.control.substract_action_from_obs_frame = False
     if args_cli.debug:
         env_cfg.observations.low_dim.enable_corruption = False
-        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "debug":"debug", "low_dim":"low_dim", "semantic":None}
-    else:
-        env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "low_dim":"low_dim", "semantic":None}
+        env_cfg.observation_grouping.update({"debug":None})
+    env_cfg.observation_grouping.update({"semantic":None})
+
     EXP_CONFIGS["wrapper_cfg"] = ACTOR_CONFIGS[EXP_CONFIGS["actor_type"]]
     if(EXP_CONFIGS["actor_type"] == "human"):    
         # Set wrapper config
@@ -355,15 +348,15 @@ def main():
     )
 
     # reset environment
-    # obs_dict = env.reset()
     obs = env.reset()
-    # goal_dict = env.random_goal_image()
     obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 
     # # reset interfaces
     collector_interface.reset()
-    # for key, value in goal_dict.items():
-    #     collector_interface.add(f"obs/goal:{key}", value)
+    for key, value in obs_mimic.items():
+        print(key, value.shape)
+        if(key.startswith("goal:")):
+            collector_interface.add(f"obs/{key}", value)
     actor.reset_idx()
 
     # simulate environment
@@ -374,7 +367,8 @@ def main():
 
             # -- obs
             for key, value in obs_mimic.items():
-                collector_interface.add(f"obs/{key}", value)
+                if(not key.startswith("goal:")):
+                    collector_interface.add(f"obs/{key}", value)
             
             # -- states
             states = env.get_state()
@@ -399,7 +393,8 @@ def main():
             # store signals from the environment
             # -- next_obs
             for key, value in obs_mimic.items():
-                collector_interface.add(f"next_obs/{key}", value.cpu().numpy())
+                if(not key.startswith("goal:")):
+                    collector_interface.add(f"next_obs/{key}", value.cpu().numpy())
             # -- rewards
             collector_interface.add("rewards", rewards)
             # -- dones
@@ -431,16 +426,13 @@ def main():
                 print("Resetting envs")
                 env.reset_idx(done_env_ids)
                 env.reset_buf[done_env_ids] = 0.
-                # goal_dict = env.random_goal_image()
-                # wait the visibility resetting of the robot to take effect
-                for i in range(5):
-                    env.sim.step()
                 env.update_cameras()
                 obs = env.get_observations()
                 obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 
-                # for key, value in goal_dict.items():
-                #     collector_interface.add(f"obs/goal:{key}", value)
+                for key, value in obs_mimic.items():
+                    if(key.startswith("goal:")):
+                        collector_interface.add(f"obs/{key}", value)
                 actor.reset_idx(done_env_ids)
     # close the simulator
     collector_interface.close()

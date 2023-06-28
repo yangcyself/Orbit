@@ -53,6 +53,7 @@ import sys
 
 sys.path.append(os.path.dirname(__file__))
 from utils.mimic_utils import RobomimicWrapper, myEnvGym
+from utils.env_presets import modify_cfg_to_robomimic, modify_cfg_to_task_push_btn
 
 # Define a function to parse a single line of the log file
 def parse_log_line(line):
@@ -106,9 +107,7 @@ def main():
     env_cfg.terminations.episode_timeout = True
     env_cfg.terminations.is_success = True
     env_cfg.terminations.collision = False
-    env_cfg.observations.return_dict_obs_in_group = True
-    env_cfg.control.control_type = "default"
-    env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "low_dim":None, "goal":["goal","goal_lowdim"]}
+    modify_cfg_to_robomimic(env_cfg)
     env_cfg.initialization.robot.position_cat = "uniform"
     env_cfg.initialization.elevator.moving_elevator_prob = 0
     env_cfg.initialization.elevator.nonzero_floor_prob = 1

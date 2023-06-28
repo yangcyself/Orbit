@@ -114,7 +114,9 @@ class InitializationCfg:
 
 @configclass
 class ObservationsCfg:
-    """Observation specifications for the MDP."""
+    """Observation specifications for the MDP.
+        cfg.observations
+    """
 
     @configclass
     class LowDimCfg:
@@ -174,13 +176,14 @@ class ObservationsCfg:
         By specifying the cfg here, it load the cached value from @random_goal_image every step .
         However, for the sake of storage, disable this and use the @random_goal_image in demoCollection.
         """
-        goal_rgb = {}
-        goal_semantic = {}
+        goal_hand_rgb = {}
+        goal_hand_semantic = {}
+        goal_base_rgb = {}
+        goal_base_semantic = {}
 
     @configclass
     class GoalLowdimCfg:
-        goal_campos = {}
-        goal_camrot = {}
+        goal_dof_pos = {}
 
     # global observation settings
     return_dict_obs_in_group = True
@@ -280,4 +283,3 @@ class ElevatorEnvCfg(IsaacEnvCfg):
     # workflow settings
     # A list of tuples {group_name: [list of observation names]} to be used for observation grouping
     observation_grouping = {}
-    spawn_goal_camera = True

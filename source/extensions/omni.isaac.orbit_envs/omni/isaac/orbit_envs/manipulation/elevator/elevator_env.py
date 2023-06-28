@@ -431,19 +431,6 @@ class ElevatorEnv(IsaacEnv):
                 ),
             )
             self.base_camera = Camera(cfg=base_camera_cfg, device="cuda")
-            if(self.cfg.spawn_goal_camera):
-                goal_camera_cfg = PinholeCameraCfg(
-                    sensor_tick=0,
-                    height=480,
-                    width=640,
-                    data_types=["rgb", "semantic_segmentation"],
-                    usd_params=PinholeCameraCfg.UsdCameraCfg(
-                        focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
-                    ),
-                )
-                self.goal_camera = Camera(cfg=goal_camera_cfg, device="cuda")
-            else:
-                self.goal_camera = None
         else:
             self.hand_camera = None
             self.base_camera = None
@@ -567,12 +554,6 @@ class ElevatorEnv(IsaacEnv):
                 self.template_env_ns + "/Robot/base" + "/CameraSensor",
                 translation=cam_pos,
                 orientation=cam_quat,
-            )
-        if(self.goal_camera is not None):
-            self.goal_camera.spawn(
-                self.template_env_ns + "/CameraSensor",
-                translation=(0, 0, 0),
-                orientation=(1, 0, 0, 0),
             )
 
         # setup debug visualization
@@ -783,7 +764,7 @@ class ElevatorEnv(IsaacEnv):
         obs_dict = {}
         for k,v in self.cfg.observation_grouping.items():
             if(type(v) == list):
-                if(self.return_dict_obs_in_group):
+                if(self.cfg.observations.return_dict_obs_in_group):
                     obs_dict[k] = {k3: obs[k2][k3] for k2 in v for k3 in obs[k2].keys()}
                 else:
                     obs_dict[k] = {k2: obs[k2] for k2 in v}
@@ -883,8 +864,6 @@ class ElevatorEnv(IsaacEnv):
             self.hand_camera.initialize()
         if(self.base_camera is not None):
             self.base_camera.initialize()
-        if(self.goal_camera is not None):
-            self.goal_camera.initialize()
 
         # create controller
         if self.cfg.control.control_type == "inverse_kinematics":
@@ -918,10 +897,11 @@ class ElevatorEnv(IsaacEnv):
         if "goal" in self.modalities:
             class_names = self.cfg.observations.semantic.hand_camera_semantic["class_names"]
             self.goal_dict = {
-                "rgb": torch.zeros((self.num_envs, *self.goal_camera.image_shape[:2], 3), device=self.device),
-                "semantic": torch.zeros((self.num_envs, *self.goal_camera.image_shape[:2], len(class_names)), device=self.device),
-                "campos": torch.zeros((self.num_envs, 3), device=self.device),
-                "camrot": torch.zeros((self.num_envs, 4), device=self.device)
+                "hand_rgb": self.get_camera_rgb("hand_camera"),
+                "hand_semantic": self.get_camera_semantic("hand_camera", class_names),
+                "base_rgb": self.get_camera_rgb("base_camera"),
+                "base_semantic": self.get_camera_semantic("base_camera", class_names),
+                "dof_pos": torch.zeros((self.num_envs, self.num_actions), device=self.device),
             }
 
     def _debug_vis(self):
@@ -1072,9 +1052,9 @@ class ElevatorEnv(IsaacEnv):
                 rgb_data = np.pad(rgb_data, padding, mode='constant')            
             # Concatenate the images horizontally
             rgb_data = np.concatenate((rgb_data, cam_data), axis=1)
-            if("goal" in self.modalities and "rgb" in self.goal_dict.keys()):
-                goal_rgb = self.goal_dict["rgb"].squeeze(0).numpy()
-                goal_seg = self.goal_dict["semantic"].to(torch.uint8).squeeze(0).numpy()*255
+            if("goal" in self.modalities and "hand_rgb" in self.goal_dict.keys()):
+                goal_rgb = self.goal_dict["hand_rgb"].squeeze(0).numpy()
+                goal_seg = self.goal_dict["hand_semantic"].to(torch.uint8).squeeze(0).numpy()*255
                 goal_imgs = [goal_rgb, *[np.tile(goal_seg[:,:,[i]],(1,1,3)) for i in range(goal_seg.shape[2])]]
                 goal_data = np.concatenate(goal_imgs, axis = 1)
                 width_diff = goal_data.shape[1] - rgb_data.shape[1]
@@ -1089,54 +1069,20 @@ class ElevatorEnv(IsaacEnv):
         return rgb_data
 
     def random_goal_image(self):
-        ## Replicator related code
-        assert self.num_envs == 1, "randomize goal image only support one environment"
-        assert self.goal_camera is not None, "goal camera is not set"
-        # the points: x,y, ry that are make sure the button are contained in the camera view
-        eye = torch.rand(3) * torch.tensor([6., 5., 0.4]) + torch.tensor([-2, 3., 0.3])
-        target = torch.rand(3) * torch.tensor([1., 1., 0.2]) + torch.tensor([0.5, -1, 0.4])
-        prim = prim_utils.get_prim_at_path(self.robot._spawn_prim_path)
-        prim_utils.set_prim_visibility(prim, visible=False)
-        self.goal_camera.set_world_pose_from_view(eye = eye, target = target)
-        self.sim.step()
-        self.goal_camera.update(dt=self.dt)
-        self.goal_camera.set_world_pose_from_view(eye = eye, target = target)
-        self.sim.step()
-        self.goal_camera.update(dt=self.dt)
-        prim_utils.set_prim_visibility(prim, visible=True)
-        
-        # Process the semantic segmentation data
+        # dummy step to make sure camera is updated
+        for i in range(2):
+            self.sim.step()
+            self.update_cameras()
         class_names = self.cfg.observations.semantic.hand_camera_semantic["class_names"]
-        idToLabels = self.goal_camera.data.output["semantic_segmentation"]['info']["idToLabels"]
-        labelToIds = {label["class"]: int(idx) for idx, label in idToLabels.items()}
-        data = wp.torch.to_torch(self.goal_camera.data.output["semantic_segmentation"]['data'])[None, :, :].squeeze(3) # n_env, H, W
-        channels = []
-        for labels in class_names:
-            # Combine binary masks for each label in the group
-            binary_mask = torch.zeros_like(data, dtype=torch.bool)
-            for label in labels:
-                idx = labelToIds.get(label)
-                if idx is not None:
-                    binary_mask = binary_mask | (data == idx)
-            # Append to the list
-            channels.append(binary_mask)
-        segment = torch.stack(channels,dim=3).to(self.device) # n_env, H, W, C
-
-        # Camera pose
-        campos, camrot = self.goal_camera._data.position, self.goal_camera._data.orientation 
-        _zero_vec = torch.zeros((self.num_envs,)).to(self._obs_shift_w)
-        new_campos, new_camrot = combine_frame_transforms(
-                torch.cat([self._obs_shift_w[:,:2],_zero_vec.unsqueeze(0)], dim=1) ,
-                quat_from_euler_xyz(_zero_vec, _zero_vec, self._obs_shift_w[:, 2]),
-                torch.tensor(campos).unsqueeze(0).to(self._obs_shift_w), 
-                torch.tensor(camrot).unsqueeze(0).to(self._obs_shift_w))
-        return_dict = {
-            "rgb": wp.torch.to_torch(self.goal_camera.data.output["rgb"])[None, :, :, :3].to(self.device),
-            "semantic": segment,
-            "campos": new_campos,
-            "camrot": new_camrot
+        dof_pos = self.robot.articulations.get_joint_positions(clone=True)
+        self.obs_pose_add(dof_pos, px_idx=0, py_idx=1, pr_idx=2)
+        return {
+                "hand_rgb": self.get_camera_rgb("hand_camera"),
+                "hand_semantic": self.get_camera_semantic("hand_camera", class_names),
+                "base_rgb": self.get_camera_rgb("base_camera"),
+                "base_semantic": self.get_camera_semantic("base_camera", class_names),
+                "dof_pos": dof_pos,
         }
-        return return_dict
         
 
     # Functions for cameras
@@ -1284,16 +1230,16 @@ class ElevatorObservationManager(ObservationManager):
     def obs_shift_w(self, env: ElevatorEnv):
         return env.obs_shift_w
 
-    def goal_rgb(self, env: ElevatorEnv):
-        return env.goal_dict["rgb"]
-    def goal_semantic(self, env: ElevatorEnv):
-        return env.goal_dict["semantic"]
-
-    def goal_campos(self, env: ElevatorEnv):
-        return env.goal_dict["campos"]
-    def goal_camrot(self, env: ElevatorEnv):
-        return env.goal_dict["camrot"]
-
+    def goal_hand_rgb(self, env: ElevatorEnv):
+        return env.goal_dict["hand_rgb"]
+    def goal_hand_semantic(self, env: ElevatorEnv):
+        return env.goal_dict["hand_semantic"]
+    def goal_base_rgb(self, env: ElevatorEnv):
+        return env.goal_dict["base_rgb"]
+    def goal_base_semantic(self, env: ElevatorEnv):
+        return env.goal_dict["base_semantic"]
+    def goal_dof_pos(self, env: ElevatorEnv):
+        return env.goal_dict["dof_pos"]
 
 class ElevatorRewardManager(RewardManager):
     """Reward manager for single-arm reaching environment."""
