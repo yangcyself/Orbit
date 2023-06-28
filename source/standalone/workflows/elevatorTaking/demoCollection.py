@@ -199,7 +199,6 @@ class IK_Actor(ActorWrapperBase):
         self.ik_controller.initialize()
         self.ik_controller.reset_idx()
 
-
         # self.robot_actions = torch.ones(self.robot.count, self.robot.num_actions, device=self.robot.device)
 
         # Note: We need to update buffers before the first step for the controller.
@@ -212,7 +211,9 @@ class IK_Actor(ActorWrapperBase):
     def get_action(self, obs):
         current_dof = self.robot.data.dof_pos
         ik_cmd = torch.zeros([self.env.num_envs, 7])
-        ik_cmd[:, 0:3] = torch.tensor([[0.,0,0.6]])
+
+        target_pos = self.env.buttonPanel.get_button_pose_w()[:, 0, 0:3]
+        ik_cmd[:, 0:3] = target_pos
 
         base_r = self.robot.data.base_dof_pos[:, 3]
         # z foward pointing in local frame

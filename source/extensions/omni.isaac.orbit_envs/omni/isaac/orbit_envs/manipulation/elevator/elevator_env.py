@@ -741,12 +741,6 @@ class ElevatorEnv(IsaacEnv):
             if self.cfg.control.substract_action_from_obs_frame:
                 self.obs_pose_substract(actions, px_idx=0, py_idx=1)
             self.robot_actions[:, :] = actions
-        elif self.cfg.control.control_type == "ohneHand":
-            actions = self.actions.clone()
-            if self.cfg.control.substract_action_from_obs_frame:
-                self.obs_pose_substract(actions, px_idx=0, py_idx=1)
-            self.robot_actions[:, :-1] = actions
-            self.robot_actions[:, -1] = -1.0
         # perform physics stepping
         for _ in range(self.cfg.control.decimation):
             # set actions into buffers
@@ -911,11 +905,9 @@ class ElevatorEnv(IsaacEnv):
             self._ik_controller = DifferentialInverseKinematics(
                 self.cfg.control.inverse_kinematics, self.robot.count, self.device
             )
-            self.num_actions = self.robot.base_num_dof + self._ik_controller.num_actions + 1
+            self.num_actions = self.robot.base_num_dof + self._ik_controller.num_actions
             self.ee_des_pos_base = torch.tensor([[0.2, 0, 0.2]], device=self.device).tile((self.num_envs, 1))
         elif self.cfg.control.control_type == "default":
-            self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof + 1
-        elif self.cfg.control.control_type == "ohneHand":
             self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof
 
         # history

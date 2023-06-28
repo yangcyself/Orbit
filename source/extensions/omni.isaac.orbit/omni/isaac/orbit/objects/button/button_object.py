@@ -35,7 +35,7 @@ class ButtonObject:
 
     cfg: ButtonObjectCfg
     """Configuration class for the button object."""
-    objects: ArticulationView
+    articulations: ArticulationView
     """Button prim view for the button object."""
 
     def __init__(self, cfg: ButtonObjectCfg):
@@ -161,12 +161,14 @@ class ButtonObject:
         """
         if env_ids is None:
             env_ids = self._ALL_INDICES
-        elif len(env_ids) == 0:
+        if len(env_ids) == 0:
             return
         # set button to relax and lights to off
         self.articulations.set_joint_positions(torch.tensor([[0.005,math.pi]],device=self.device).tile(len(env_ids),1), env_ids)
         # Set velocities to zero
         self.articulations.set_joint_velocities(torch.full((len(env_ids), 2),0.,device = self.device), env_ids)
+        self.data.btn_state[:,:] = False
+
 
     def update_buffers(self, dt: float = None):
         """Update the internal buffers.

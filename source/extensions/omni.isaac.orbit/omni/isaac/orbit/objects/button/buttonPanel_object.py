@@ -182,6 +182,17 @@ class ButtonPanel:
         """
         self.button.update_buffers(dt)
 
+    def get_button_pose_w(self):
+        """Get button poses in world frame.
+
+        Returns:
+            torch.Tensor: n_envs x n_btns x 7
+        """
+        position_w, quat_w = self.button.articulations.get_world_poses(indices=None, clone=False)
+        return torch.cat([position_w, quat_w], dim=-1).view(self.env_count, self.btn_per_env, 7)
+
+
+    # functions for getting and setting button state
     def get_state_env_any(self, btn_ids: Optional[Sequence[int]] = None):
         """Get button state and reduce them within env (with any).
         btn_ids: The indices of the button to get state from. Defaults to None (all buttons).
@@ -208,6 +219,7 @@ class ButtonPanel:
             env_ids = ...
         self.button.data.btn_state.view(self.env_count, self.btn_per_env)[env_ids, btn_ids] = s
     
+    # functions for getting and setting environment state (everything)
     def get_state(self):
         # Return the underlying state of a simulated environment. Should be compatible with reset_to.
         return self.button.get_state().view(self.env_count, -1)
