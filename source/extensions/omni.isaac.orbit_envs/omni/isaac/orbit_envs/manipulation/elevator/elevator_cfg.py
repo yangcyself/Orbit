@@ -68,7 +68,7 @@ class InitializationCfg:
         """Init settings for the buttons
             cfg.initialization.buttonPanel
         """
-        num_target_max = 1 # the max number of buttons with semantic: button-target
+        num_target_max = 1 # the max number of buttons with semantic: button_target
 
 
     @configclass
@@ -150,13 +150,16 @@ class ObservationsCfg:
 
     @configclass
     class SemanticCfg:
+        """
+        semantic
+        """
         hand_camera_semantic = {"class_names":[
-            ("button-target"), # first channel
-            ("buttonPanel", "button", "button-target") # second channel
+            ("button_target",), # first channel
+            ("button_panel", "button", "button_target") # second channel
         ]}
         base_camera_semantic = {"class_names":[
-            ("button-target"), # first channel
-            ("buttonPanel", "button", "button-target") # second channel
+            ("button_target",), # first channel
+            ("button_panel", "button", "button_target") # second channel
         ]}
 
     @configclass

@@ -8,6 +8,7 @@ from typing import Optional, Sequence
 
 import carb
 import omni.isaac.core.utils.prims as prim_utils
+import omni.isaac.core.utils.semantics as semantics_utils
 
 import omni.isaac.orbit.utils.kit as kit_utils
 import omni.replicator.core as rep
@@ -112,7 +113,7 @@ class ButtonPanel:
                 "Cube",
                 translation=(0, 0, 0),
                 scale=(self.cfg.panel_size[0]/2, self.cfg.panel_size[1]/2, 0.005),
-                semantic_label="buttonPanel"
+                semantic_label="button_panel"
             )
             
             button_spacing_x = self.cfg.panel_size[0]/self.cfg.panel_grids[0]
@@ -221,17 +222,17 @@ class ButtonPanel:
 
     def reset_semantics(self, numTarget):
         """reset the semantics of the buttons according to self.data.targetButton
-            num_target buttons are labeled as `class: button-target`
+            num_target buttons are labeled as `class: button_target`
             others are labeled as `class: button`
         """
         for i, btnrank in enumerate(self._data.buttonRanking):
             for j in btnrank[:numTarget]:
-                assert prim_utils.is_prim_path_valid(self._spawn_prim_path[i]+f"/Button_{j}")
-                with rep.get.prims(path_pattern = self._spawn_prim_path[i]+f"/Button_{j}"):
-                    rep.modify.semantics([("class", "button-target")])
+                prim = prim_utils.get_prim_at_path(self._spawn_prim_path[i]+f"/Button_{j}")
+                semantics_utils.add_update_semantics(prim, "button_target")
             for j in btnrank[numTarget:]:
-                with rep.get.prims(path_pattern = self._spawn_prim_path[i]+f"/Button_{j}"):
-                    rep.modify.semantics([("class", "button")])
+                prim = prim_utils.get_prim_at_path(self._spawn_prim_path[i]+f"/Button_{j}")
+                semantics_utils.add_update_semantics(prim, "button")
+
 
     # functions for getting and setting button state
     def get_state_env_any(self, btn_ids: Optional[Sequence[int]] = None):
