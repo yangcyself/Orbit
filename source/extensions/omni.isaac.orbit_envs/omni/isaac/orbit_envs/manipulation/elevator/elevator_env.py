@@ -411,8 +411,8 @@ class ElevatorEnv(IsaacEnv):
         if("rgb" in self.modalities):
             camera_cfg = PinholeCameraCfg(
                 sensor_tick=0,
-                height=128,
-                width=128,
+                height=224,
+                width=224,
                 data_types=["rgb", "semantic_segmentation"],
                 usd_params=PinholeCameraCfg.UsdCameraCfg(
                     focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
@@ -421,8 +421,8 @@ class ElevatorEnv(IsaacEnv):
             self.hand_camera = Camera(cfg=camera_cfg, device="cuda")
             base_camera_cfg = PinholeCameraCfg(
                 sensor_tick=0,
-                height=160,
-                width=160,
+                height=224,
+                width=224,
                 data_types=["rgb", "semantic_segmentation"],
                 # FOV = 2 * arctan(horizontal_aperture / (2 * focal_length))
                 # base_camera is wide about 120 degree
@@ -542,8 +542,8 @@ class ElevatorEnv(IsaacEnv):
         # Spawn camera
         if(self.hand_camera is not None):
             up_axis = Gf.Vec3d(0, -1, 0)
-            eye_position = Gf.Vec3d(0.05, -0.1, 0.1)
-            target_position = Gf.Vec3d(10, 0, 0)
+            eye_position = Gf.Vec3d(0.05, -0.2, 0.1)
+            target_position = Gf.Vec3d(10, 0.1, -0.05)
             matrix_gf = Gf.Matrix4d(1).SetLookAt(eye_position, target_position, up_axis)
             # camera position and rotation in world frame
             matrix_gf = matrix_gf.GetInverse()

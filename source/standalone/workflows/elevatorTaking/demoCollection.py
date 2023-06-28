@@ -81,6 +81,18 @@ ACTOR_CONFIGS = {
             "ik_method" : "dls",
             "position_offset" : (0.0, 0.0, 0.0),
             "rotation_offset" : (1.0, 0.0, 0.0, 0.0) 
+        },
+        "actor_cfg":{
+            "debug_vis": False,
+            ## ee target is a trajectory to follow
+            "ee_target_init_bias": (-0.1, 0.35, -0.1),
+            "ee_target_end_bias": (0,  -0.01, 0),
+            "ee_target_end_std": (0,  0, 0),
+            "ee_target_alpha": 0.05, # speed of target update
+            ## base target is based on the target pos of button
+            "base_target_end_bias": (0,  0.75, -0.4),
+            "base_target_end_std": (0.005, 0.005, 0.005, 0.01),
+            "base_target_alpha": 0.2 # speed of target update
         }
     }
 }
@@ -194,7 +206,7 @@ class IK_Actor(ActorWrapperBase):
     """
     Wrapper for ik to provide actions
     """
-    def __init__(self, env, ik_cfg):
+    def __init__(self, env, ik_cfg, actor_cfg):
         from omni.isaac.orbit.markers import StaticMarker
         self.env = env
         self.robot = self.env.robot
@@ -207,15 +219,17 @@ class IK_Actor(ActorWrapperBase):
 
         # Note: We need to update buffers before the first step for the controller.
         self.robot.update_buffers(self.env.dt)
-
-        self.cmd_marker = StaticMarker(
-            "/Visuals/ik_command", self.env.num_envs, usd_path=self.env.cfg.marker.usd_path, scale=self.env.cfg.marker.scale
-        )
+        self.actor_cfg = actor_cfg
+        if self.actor_cfg["debug_vis"]:
+            self.cmd_marker = StaticMarker(
+                "/Visuals/ik_command", self.env.num_envs, usd_path=self.env.cfg.marker.usd_path, scale=self.env.cfg.marker.scale
+            )
 
     def get_action(self, obs):
         current_dof = self.robot.data.dof_pos
         ik_cmd = torch.zeros([self.env.num_envs, 7])
-        self.current_target_pos = 0.05 * self.target_pos + 0.95 * self.current_target_pos
+        alpha = self.actor_cfg["ee_target_alpha"]
+        self.current_target_pos = alpha * self.target_pos + (1-alpha) * self.current_target_pos
         ik_cmd[:, 0:3] = self.current_target_pos
 
         base_r = self.robot.data.base_dof_pos[:, 3]
@@ -237,9 +251,11 @@ class IK_Actor(ActorWrapperBase):
         ee_positions = self.ik_controller.desired_ee_pos + self.env.envs_positions
         ee_orientations = self.ik_controller.desired_ee_rot
         # set poses
-        self.cmd_marker.set_world_poses(ee_positions, ee_orientations)
+        if self.actor_cfg["debug_vis"]:
+            self.cmd_marker.set_world_poses(ee_positions, ee_orientations)
 
-        base_actions = 0.8 * current_dof[:,:4] + 0.2 * self.target_base_pose
+        alpha = self.actor_cfg["base_target_alpha"]
+        base_actions = (1-alpha) * current_dof[:,:4] + alpha * self.target_base_pose
         robot_actions = torch.cat([base_actions, arm_actions],axis = 1)
         return robot_actions
 
@@ -249,16 +265,23 @@ class IK_Actor(ActorWrapperBase):
         """
         self.ik_controller.reset_idx(env_ids)
         self.target_pos = self.env.buttonPanel.get_rank1_button_pose_w()[:, 0:3]
-        self.target_pos[:,1] -= 0.01
+        self.target_pos[:,0] += self.actor_cfg["ee_target_end_bias"][0]
+        self.target_pos[:,1] += self.actor_cfg["ee_target_end_bias"][1]
+        self.target_pos[:,2] += self.actor_cfg["ee_target_end_bias"][2]
         self.current_target_pos = self.target_pos.clone()
-        self.current_target_pos[:,1] += 0.35
-        # self.target_pos += torch.randn_like(self.target_pos) * 0.005
+        self.current_target_pos[:,0] += self.actor_cfg["ee_target_init_bias"][0] # make target appear in the FOV
+        self.current_target_pos[:,1] += self.actor_cfg["ee_target_init_bias"][1]
+        self.current_target_pos[:,2] += self.actor_cfg["ee_target_init_bias"][2] # make target appear in the FOV
         self.target_base_pose = torch.zeros([self.env.num_envs, 4], device = self.env.device)
-        self.target_base_pose[:,0] = self.target_pos[:,0]
-        self.target_base_pose[:,2] = self.target_pos[:,2] - 0.4
+        self.target_base_pose[:,0] = self.target_pos[:,0] + self.actor_cfg["base_target_end_bias"][0]
+        self.target_base_pose[:,1] = self.target_pos[:,1] + self.actor_cfg["base_target_end_bias"][1]
+        self.target_base_pose[:,2] = self.target_pos[:,2] + self.actor_cfg["base_target_end_bias"][2]
         self.target_base_pose[:,3] = -math.pi/2
-        self.target_base_pose[:,:3] += torch.randn_like(self.target_base_pose[:,:3]) * 0.005
-        self.target_base_pose[:,3] += torch.randn_like(self.target_base_pose[:,3]) * 0.01
+        for i in range(3):
+            self.target_pos[:,i] += torch.randn_like(self.target_pos[:,i]) * self.actor_cfg["ee_target_end_std"][i]
+        for i in range(4):
+            self.target_base_pose[:,i] += torch.randn_like(self.target_base_pose[:,i]) * self.actor_cfg["base_target_end_std"][i]
+
 
 def main():
     """Collect demonstrations from the environment using teleop interfaces."""
@@ -310,7 +333,7 @@ def main():
         # create actor
         actor = RslRlActor(env, args_cli.task, args_cli.checkpoint)
     elif(EXP_CONFIGS["actor_type"] == "ik"):
-        actor = IK_Actor(env, EXP_CONFIGS["wrapper_cfg"]["ik_cfg"])
+        actor = IK_Actor(env, EXP_CONFIGS["wrapper_cfg"]["ik_cfg"], EXP_CONFIGS["wrapper_cfg"]["actor_cfg"])
     
     # specify directory for logging experiments
     log_dir = datetime.now().strftime("%b%d_%H-%M-%S")
@@ -334,13 +357,13 @@ def main():
     # reset environment
     # obs_dict = env.reset()
     obs = env.reset()
-    goal_dict = env.random_goal_image()
+    # goal_dict = env.random_goal_image()
     obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 
     # # reset interfaces
     collector_interface.reset()
-    for key, value in goal_dict.items():
-        collector_interface.add(f"obs/goal:{key}", value)
+    # for key, value in goal_dict.items():
+    #     collector_interface.add(f"obs/goal:{key}", value)
     actor.reset_idx()
 
     # simulate environment
@@ -408,7 +431,7 @@ def main():
                 print("Resetting envs")
                 env.reset_idx(done_env_ids)
                 env.reset_buf[done_env_ids] = 0.
-                goal_dict = env.random_goal_image()
+                # goal_dict = env.random_goal_image()
                 # wait the visibility resetting of the robot to take effect
                 for i in range(5):
                     env.sim.step()
@@ -416,8 +439,8 @@ def main():
                 obs = env.get_observations()
                 obs_mimic = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
 
-                for key, value in goal_dict.items():
-                    collector_interface.add(f"obs/goal:{key}", value)
+                # for key, value in goal_dict.items():
+                #     collector_interface.add(f"obs/goal:{key}", value)
                 actor.reset_idx(done_env_ids)
     # close the simulator
     collector_interface.close()
