@@ -66,10 +66,14 @@ ALMA_CFG = MobileManipulatorCfg(
     init_state=MobileManipulatorCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.0),
         dof_pos={
+            "world_body_p_x": 0.0,
+            "world_body_p_y": 0.0,
+            "world_body_p_z": 0.6,
+            "world_body_r_z": 0.0,
             # dynaarm
             "SH_ROT": 0.0,
-            "SH_FLE": -0.7,
-            "EL_FLE": 1.4,
+            "SH_FLE": -1.0,
+            "EL_FLE": 2.4,
             "FA_ROT": 0.0,
             "WRIST_1": 0.0,
             "WRIST_2": 0.0,

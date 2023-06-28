@@ -369,6 +369,10 @@ def get_iterator_from_dataloader(args):
         all_obs_keys=config.all_obs_keys,
         verbose=True
     )
+    if(args.debug):
+        shape_meta["all_obs_keys"].append('debug:debug_info')
+        shape_meta["all_obs_keys"].append('debug:obs_shift_w')
+        
         
     trainset, validset = TrainUtils.load_data_for_training(
         config, obs_keys=shape_meta["all_obs_keys"])

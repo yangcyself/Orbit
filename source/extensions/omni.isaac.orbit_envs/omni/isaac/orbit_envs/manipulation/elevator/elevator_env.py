@@ -559,18 +559,18 @@ class ElevatorEnv(IsaacEnv):
 
     def _design_scene(self):
         # ground plane
-        kit_utils.create_ground_plane("/World/defaultGroundPlane", z_position=-1.05)
+        kit_utils.create_ground_plane("/World/defaultGroundPlane", z_position=0)
 
         # robot
-        self.robot.spawn(self.template_env_ns + "/Robot", translation=(0, 0, -0.5))
+        self.robot.spawn(self.template_env_ns + "/Robot", translation=(0, 0, 0))
         self.elevator.spawn(
             self.template_env_ns + "/Elevator",
-            translation=(1.5, -2.0, 0.0),
+            translation=(1.5, -2.0, 1.05),
             orientation=(sqrt(1 / 2), 0.0, 0.0, sqrt(1 / 2)),
         )
         self.buttonPanel.spawn(
             self.template_env_ns + "/ButtonPanel",
-            translation=(0, -0.75, 0.6),
+            translation=(0, -0.75, 1.2),
             # orientation=(1 ,0.0, 0.0 , 0.0),
             orientation=(0.0, 0.0, sqrt(1 / 2), sqrt(1 / 2)),
         )
@@ -906,9 +906,11 @@ class ElevatorEnv(IsaacEnv):
                 self.cfg.control.inverse_kinematics, self.robot.count, self.device
             )
             self.num_actions = self.robot.base_num_dof + self._ik_controller.num_actions
-            self.ee_des_pos_base = torch.tensor([[0.2, 0, 0.2]], device=self.device).tile((self.num_envs, 1))
+            self.ee_des_pos_base = torch.tensor([[0.32, 0, 0.4]], device=self.device).tile((self.num_envs, 1))
         elif self.cfg.control.control_type == "default":
             self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof
+        else:
+            raise ValueError("Unsupported control type: {}".format(self.cfg.control.control_type))
 
         # history
         print("num_actions: ", self.num_actions)

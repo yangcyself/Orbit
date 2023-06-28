@@ -525,12 +525,12 @@ class RobotBase:
     def get_state(self):
         """Get the state of everything,
            Return the underlying state of a simulated environment. Should be compatible with reset_to_state.
-        """
-        
-        return torch.cat([
-            self._data.dof_pos,
-            self._data.dof_vel
+        """ 
+        state =  torch.cat([
+            self.articulations.get_joint_positions(indices=self._ALL_INDICES, clone=True),
+            self.articulations.get_joint_velocities(indices=self._ALL_INDICES, clone=True)
         ], dim=1)
+        return state
 
     def reset_to_state(self, state):
         # Reset the simulated environment to a given state. Useful for reproducing results

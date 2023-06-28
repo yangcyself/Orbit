@@ -220,6 +220,12 @@ class ButtonPanel:
         self.button.data.btn_state.view(self.env_count, self.btn_per_env)[env_ids, btn_ids] = s
     
     # functions for getting and setting environment state (everything)
+    @property
+    def state_should_dims(self):
+        btn_state_dim = self.button.state_should_dims[-1]
+        state_should_dims = [btn_state_dim*i for i in range(self.btn_per_env+1)]
+        return state_should_dims
+
     def get_state(self):
         # Return the underlying state of a simulated environment. Should be compatible with reset_to.
         return self.button.get_state().view(self.env_count, -1)
