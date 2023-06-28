@@ -594,6 +594,8 @@ class ElevatorEnv(IsaacEnv):
         # -- init pose
         self._randomize_robot_initial_pose(env_ids=env_ids)
         self._randomize_elevator_initial_state(env_ids=env_ids)
+        self._randomize_buttonPanel(env_ids=env_ids)
+        
 
         # --desire position
         self.robot_des_pose_w[env_ids, 0:3] =  torch.tensor([[1.53, -2.08, -1.61]], device = self.device)
@@ -952,6 +954,13 @@ class ElevatorEnv(IsaacEnv):
         self.elevator._sm.sm_state[env_ids[nonzeroFloorFlag], 1] = torch.randint(1, self.cfg.initialization.elevator.max_init_floor,
             (nonzeroFloorFlag.sum(),), device = "cuda", dtype = torch.int32)
 
+    def _randomize_buttonPanel(self, env_ids: torch.Tensor):
+        self.buttonPanel.random_reset_buttonRanking(env_ids = env_ids)
+        if(self.cfg.initialization.buttonPanel.num_target_max > 1):
+            nTargets = torch.randint(low=1, high = self.cfg.initialization.buttonPanel.num_target_max, size=(1,))
+        else:
+            nTargets = 1
+        self.buttonPanel.reset_semantics(numTarget = int(nTargets))
 
     def is_success(self):
         """ Required by robomimic

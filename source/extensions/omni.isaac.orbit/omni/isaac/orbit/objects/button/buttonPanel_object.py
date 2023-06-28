@@ -10,6 +10,7 @@ import carb
 import omni.isaac.core.utils.prims as prim_utils
 
 import omni.isaac.orbit.utils.kit as kit_utils
+import omni.replicator.core as rep
 
 from .buttonPanel_cfg import ButtonPanelCfg
 from .buttonPanel_data import ButtonPanelData
@@ -35,10 +36,10 @@ class ButtonPanel:
         """
         # store inputs
         self.cfg = cfg
-        # container for data access, Empty for now
+        # container for data access
         self._data = ButtonPanelData()
         # buffer variables (filled during spawn and initialize)
-        self._spawn_prim_path: str = None
+        self._spawn_prim_path: Sequence[str] = []
         if(len(self.cfg.btn_cfgs) > 0):
             self.button: ButtonObject = ButtonObject(self.cfg.btn_cfgs[0])
 
@@ -95,39 +96,41 @@ class ButtonPanel:
             orientation = self.cfg.init_state.rot
 
         # -- save prim path for later
-        self._spawn_prim_path = prim_path
+        self._spawn_prim_path.append(prim_path)
         # -- spawn asset if it doesn't exist.
         if not prim_utils.is_prim_path_valid(prim_path):
             # add prim as reference to stage
             prim_utils.create_prim(
-                self._spawn_prim_path,
+                prim_path,
                 "Xform",
                 translation=translation,
                 orientation=orientation,
                 scale = (1.0,1.0,1.0)
             )
             prim_utils.create_prim(
-                self._spawn_prim_path+"/Panel",
+                prim_path+"/Panel",
                 "Cube",
                 translation=(0, 0, 0),
                 scale=(self.cfg.panel_size[0]/2, self.cfg.panel_size[1]/2, 0.005),
-
+                semantic_label="buttonPanel"
             )
             
             button_spacing_x = self.cfg.panel_size[0]/self.cfg.panel_grids[0]
             button_spacing_y = self.cfg.panel_size[1]/self.cfg.panel_grids[1]
             button_spacing_xb = - self.cfg.panel_size[0]/2
             button_spacing_yb = - self.cfg.panel_size[1]/2
+            btn_count = 0
             for i in range(self.cfg.panel_grids[0]):
                 for j in range(self.cfg.panel_grids[1]):
-                    self.button.cfg.usd_path = self.cfg.btn_cfgs[self.btn_count].usd_path
-                    self.button.cfg.symbol_usd_path = self.cfg.btn_cfgs[self.btn_count].symbol_usd_path
-                    self.button.spawn(f"{prim_path}/button_{self.btn_count}", 
+                    self.button.cfg.usd_path = self.cfg.btn_cfgs[btn_count].usd_path
+                    self.button.cfg.symbol_usd_path = self.cfg.btn_cfgs[btn_count].symbol_usd_path
+                    self.button.spawn(f"{prim_path}/Button_{btn_count}", 
                         translation=(button_spacing_xb+(i+0.5)*button_spacing_x, 
                                      button_spacing_yb+(j+0.5)*button_spacing_y, 
                                      0.005)
                     )
-                    self.btn_count += 1
+                    btn_count += 1
+            self.btn_count += btn_count
         else:
             carb.log_warn(f"A prim already exists at prim path: '{prim_path}'. Skipping...")
         self.env_count += 1
@@ -150,17 +153,24 @@ class ButtonPanel:
         # default prim path if not cloned
         if prim_paths_expr is None:
             if self._is_spawned is not None:
-                self._prim_paths_expr = self._spawn_prim_path
+                self._prim_paths_expr = self._spawn_prim_path[-1]
             else:
                 raise RuntimeError(
                     "Initialize the object failed! Please provide a valid argument for `prim_paths_expr`."
                 )
         else:
             self._prim_paths_expr = prim_paths_expr
-        self.button.initialize(f"{self._prim_paths_expr}/button.*")
+        self.button.initialize(f"{self._prim_paths_expr}/Button.*")
         # sanity check
         assert self.btn_count == self.button.count, "Button count mismatch!"
         assert self.btn_per_env ==  int(self.btn_count / self.env_count), "Button per env count mismatch!"
+        assert all(self._spawn_prim_path[i] <= self._spawn_prim_path[i + 1] for i in range(len(self._spawn_prim_path) - 1))
+
+        # data
+        self._data.buttonRanking = torch.stack([
+            torch.randperm(self.btn_per_env)
+            for i in range(self.env_count)
+        ])
 
     def reset_buffers(self, env_ids: Optional[Sequence[int]] = None):
         """Resets all internal buffers.
@@ -182,8 +192,8 @@ class ButtonPanel:
         """
         self.button.update_buffers(dt)
 
-    def get_button_pose_w(self):
-        """Get button poses in world frame.
+    def get_all_button_pose_w(self):
+        """Get all button poses in world frame.
 
         Returns:
             torch.Tensor: n_envs x n_btns x 7
@@ -191,6 +201,37 @@ class ButtonPanel:
         position_w, quat_w = self.button.articulations.get_world_poses(indices=None, clone=False)
         return torch.cat([position_w, quat_w], dim=-1).view(self.env_count, self.btn_per_env, 7)
 
+    def get_rank1_button_pose_w(self):
+        """Get the button pose in world frame.
+          The target button ranked the first in buttonRanking
+
+        Returns:
+            torch.Tensor: n_envs x 7
+        """
+        indices = self._data.buttonRanking[:,0] + torch.arange(0, self.btn_count, self.btn_per_env)
+        position_w, quat_w = self.button.articulations.get_world_poses(indices=indices, clone=False)
+        return torch.cat([position_w, quat_w], dim=-1).view(self.env_count, 7)
+
+    # Functions for randomization in reset
+    def random_reset_buttonRanking(self, env_ids:Optional[Sequence[int]] = None):
+        if env_ids is None:
+            env_ids = torch.arange(self.env_count, dtype=torch.long, device=self.device)
+        for i in env_ids:
+            self._data.buttonRanking[i,:] = torch.randperm(self.btn_per_env)
+
+    def reset_semantics(self, numTarget):
+        """reset the semantics of the buttons according to self.data.targetButton
+            num_target buttons are labeled as `class: button-target`
+            others are labeled as `class: button`
+        """
+        for i, btnrank in enumerate(self._data.buttonRanking):
+            for j in btnrank[:numTarget]:
+                assert prim_utils.is_prim_path_valid(self._spawn_prim_path[i]+f"/Button_{j}")
+                with rep.get.prims(path_pattern = self._spawn_prim_path[i]+f"/Button_{j}"):
+                    rep.modify.semantics([("class", "button-target")])
+            for j in btnrank[numTarget:]:
+                with rep.get.prims(path_pattern = self._spawn_prim_path[i]+f"/Button_{j}"):
+                    rep.modify.semantics([("class", "button")])
 
     # functions for getting and setting button state
     def get_state_env_any(self, btn_ids: Optional[Sequence[int]] = None):

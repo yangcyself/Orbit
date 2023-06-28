@@ -216,7 +216,7 @@ class IK_Actor(ActorWrapperBase):
         current_dof = self.robot.data.dof_pos
         ik_cmd = torch.zeros([self.env.num_envs, 7])
 
-        target_pos = self.env.buttonPanel.get_button_pose_w()[:, 0, 0:3]
+        target_pos = self.env.buttonPanel.get_rank1_button_pose_w()[:, 0:3]
         target_pos[:,1] -= 0.005
         ik_cmd[:, 0:3] = target_pos
 

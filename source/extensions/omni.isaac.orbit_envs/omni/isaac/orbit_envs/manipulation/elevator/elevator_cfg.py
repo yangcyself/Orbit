@@ -62,7 +62,15 @@ class InitializationCfg:
         # randomize position
         position_uniform_min = [0.9, 0.3, 0.3, -3.1]  # position (x,y,z,yaw)
         position_uniform_max = [2.1, 2.,  0.7, 0.]  # position (x,y,z,yaw)
-    
+
+    @configclass
+    class ButtonPanelCfg:
+        """Init settings for the buttons
+            cfg.initialization.buttonPanel
+        """
+        num_target_max = 1 # the max number of buttons with semantic: button-target
+
+
     @configclass
     class ElevatorStateCfg:
         """Initial state of the elevator
@@ -101,6 +109,7 @@ class InitializationCfg:
 
     # initialize
     robot: RobotPosCfg = RobotPosCfg()
+    buttonPanel:ButtonPanelCfg = ButtonPanelCfg()
     elevator: ElevatorStateCfg = ElevatorStateCfg()
     scene: SceneCfg = SceneCfg()
 
@@ -142,12 +151,12 @@ class ObservationsCfg:
     @configclass
     class SemanticCfg:
         hand_camera_semantic = {"class_names":[
-            ("button-up", "button-down"), # first channel
-            ('button-panel', "button-up", "button-down") # second channel
+            ("button-target"), # first channel
+            ("buttonPanel", "button", "button-target") # second channel
         ]}
         base_camera_semantic = {"class_names":[
-            ("button-up", "button-down"), # first channel
-            ('button-panel', "button-up", "button-down") # second channel
+            ("button-target"), # first channel
+            ("buttonPanel", "button", "button-target") # second channel
         ]}
 
     @configclass

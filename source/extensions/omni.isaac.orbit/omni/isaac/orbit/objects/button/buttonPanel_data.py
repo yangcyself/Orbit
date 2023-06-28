@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 @dataclass
 class ButtonPanelData:
-    """Data container for a robot."""
+    """Data container for a buttonPanel."""
 
-    pass
+    # Just a Nenv x Nbtn random perm matrix
+    # Just to give some randomness to the choice of buttons
+    buttonRanking = None
