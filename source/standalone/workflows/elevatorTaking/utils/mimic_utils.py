@@ -1,5 +1,6 @@
 import gym
 import torch
+import math
 from robomimic.algo import RolloutPolicy
 from robomimic.envs.env_gym import EnvGym
 import robomimic.utils.file_utils as FileUtils
@@ -24,15 +25,14 @@ class RobomimicWrapper(RolloutPolicy):
         return (img.permute(2, 0, 1).to(dtype=torch.float32)/1.).clamp(min =0., max=1.)
 
     def __call__(self, ob, goal=None):
-        if "goal" in ob:
-            ob["goal"] = {k[5:]:v for k,v in ob["goal"].items()} # remove the "goal_" prefix
         obs = {f"{kk}:{k}":v[0] for kk,vv in ob.items() for k,v in vv.items()}
-        obs["rgb:hand_camera_rgb"] = self._process_img(obs["rgb:hand_camera_rgb"])
-        if "goal" in ob:
-            obs["goal:rgb"] = self._process_img(obs["goal:rgb"])
-            obs["goal:semantic"] = self._process_semantic(obs["goal:semantic"])
+        for k in obs:
+            if "rgb" in k:
+                obs[k] = self._process_img(obs[k])
+            if "semantic" in k:
+                obs[k] = self._process_semantic(obs[k])
         return torch.tensor(self.policy(obs)).to(self.device)[None,...]
-    
+
     @property
     def config(self):
         return self.policy.global_config

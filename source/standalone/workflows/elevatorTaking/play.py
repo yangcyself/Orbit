@@ -37,8 +37,8 @@ import robomimic.utils.torch_utils as TorchUtils
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
-from utils.mimic_utils import RobomimicWrapper, myEnvGym
-
+from utils.mimic_utils import RobomimicWrapper
+from utils.env_presets import modify_cfg_to_robomimic, modify_cfg_to_task_push_btn
 
 def main():
     """Run a trained policy from robomimic with Isaac Orbit environment."""
@@ -47,19 +47,10 @@ def main():
     # modify configuration
     # env_cfg.control.control_type = "inverse_kinematics"
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
+    modify_cfg_to_task_push_btn(env_cfg)
+    modify_cfg_to_robomimic(env_cfg)
+    env_cfg.observation_grouping.update({"semantic":None})
     env_cfg.env.episode_length_s = 2.0
-    env_cfg.terminations.episode_timeout = True
-    env_cfg.terminations.is_success = "pushed_btn"
-    env_cfg.terminations.collision = False
-    env_cfg.observations.return_dict_obs_in_group = True
-    env_cfg.control.substract_action_from_obs_frame = True
-    env_cfg.control.control_type = "default"
-    env_cfg.observation_grouping = {"policy":"privilege", "rgb":None, "low_dim":None, "goal":["goal","goal_lowdim"]}
-    env_cfg.initialization.robot.position_cat = "uniform"
-    env_cfg.initialization.elevator.moving_elevator_prob = -1
-    env_cfg.initialization.elevator.nonzero_floor_prob = 1
-
-
 
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=False)
@@ -67,7 +58,7 @@ def main():
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
     # restore policy
-    policy = RobomimicWrapper(checkpoint = args_cli.checkpoint, device = device, verbose = False)
+    policy = RobomimicWrapper(checkpoint = args_cli.checkpoint, config_update = {}, device = device, verbose = False)
     # reset environment
     obs_dict = env.reset()
     policy.start_episode()
