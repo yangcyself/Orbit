@@ -17,15 +17,20 @@ class RobomimicWrapper(RolloutPolicy):
     def _prepare_observation(self, ob):
         self.policy._prepare_observation(ob)
 
+    def _process_img(self, img):
+        return (img.permute(2, 0, 1).to(dtype=torch.float32)/255.).clamp(min =0., max=1.)
+
+    def _process_semantic(self, img):
+        return (img.permute(2, 0, 1).to(dtype=torch.float32)/1.).clamp(min =0., max=1.)
+
     def __call__(self, ob, goal=None):
         if "goal" in ob:
             ob["goal"] = {k[5:]:v for k,v in ob["goal"].items()} # remove the "goal_" prefix
         obs = {f"{kk}:{k}":v[0] for kk,vv in ob.items() for k,v in vv.items()}
-        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].permute(2, 0, 1).to(dtype=torch.float32)/255.
-        obs["rgb:hand_camera_rgb"] = obs["rgb:hand_camera_rgb"].clamp(min =0., max=1.)
+        obs["rgb:hand_camera_rgb"] = self._process_img(obs["rgb:hand_camera_rgb"])
         if "goal" in ob:
-            obs["goal:rgb"] = obs["goal:rgb"].permute(2, 0, 1).to(dtype=torch.float32)/255.
-            obs["goal:semantic"] = obs["goal:semantic"].permute(2, 0, 1).to(dtype=torch.float32)/255.
+            obs["goal:rgb"] = self._process_img(obs["goal:rgb"])
+            obs["goal:semantic"] = self._process_semantic(obs["goal:semantic"])
         return torch.tensor(self.policy(obs)).to(self.device)[None,...]
     
     @property
