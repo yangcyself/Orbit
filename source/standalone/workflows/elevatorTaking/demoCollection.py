@@ -375,6 +375,9 @@ def main():
             collector_interface.add("states", states.cpu().numpy())
             if(args_cli.debug):
                 assert torch.norm(states[:,-2:] - obs_mimic["debug:debug_info"])<1e-9
+                assert torch.all(torch.isfinite(states)), "The tensor contains NaN or Inf in states." 
+                for k,v in obs_mimic.items():
+                    assert torch.all(torch.isfinite(v)), "The tensor contains NaN or Inf." 
 
             if(EXP_CONFIGS["apply_action_noise"] is not None and EXP_CONFIGS["apply_action_noise"]):
                 actions += EXP_CONFIGS["apply_action_noise"] * torch.randn_like(actions)
