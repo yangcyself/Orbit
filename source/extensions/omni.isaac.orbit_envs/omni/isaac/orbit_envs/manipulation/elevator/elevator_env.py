@@ -996,6 +996,7 @@ class ElevatorEnv(IsaacEnv):
             input_vec[:, py_idx] = y + px * torch.sin(r) + py * torch.cos(r)
         if(pr_idx is not None):
             input_vec[:, pr_idx] = r + input_vec[:, pr_idx]
+            input_vec[:, pr_idx] = math.atan2(math.sin(input_vec[:, pr_idx]), math.cos(input_vec[:, pr_idx]))
         if(vx_idx is not None and vy_idx is not None):
             ##! the clones are necessary to avoid in-place operations
             vx,vy = input_vec[:, vx_idx].clone(), input_vec[:, vy_idx].clone()
@@ -1011,8 +1012,8 @@ class ElevatorEnv(IsaacEnv):
             input_vec[:, px_idx] = (px - x) * torch.cos(r) + (py - y) * torch.sin(r)
             input_vec[:, py_idx] = -(px - x) * torch.sin(r) + (py - y) * torch.cos(r)
         if(pr_idx is not None):
-            pr = input_vec[:, pr_idx].clone()
-            input_vec[:, pr_idx] = pr - r
+            input_vec[:, pr_idx] = input_vec[:, pr_idx] - r
+            input_vec[:, pr_idx] = math.atan2(math.sin(input_vec[:, pr_idx]), math.cos(input_vec[:, pr_idx]))
         if(vx_idx is not None and vy_idx is not None):
             vx,vy = input_vec[:, vx_idx].clone(), input_vec[:, vy_idx].clone()
             input_vec[:, vx_idx] = vx * torch.cos(r) + vy * torch.sin(r)
