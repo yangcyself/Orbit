@@ -101,18 +101,9 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=1)
     # modify configuration
-    # env_cfg.control.control_type = "inverse_kinematics"
-    # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
-    env_cfg.env.episode_length_s = 5.
-    env_cfg.terminations.episode_timeout = True
-    env_cfg.terminations.is_success = True
-    env_cfg.terminations.collision = False
     modify_cfg_to_robomimic(env_cfg)
-    env_cfg.initialization.robot.position_cat = "uniform"
-    env_cfg.initialization.elevator.moving_elevator_prob = 0
-    env_cfg.initialization.elevator.nonzero_floor_prob = 1
-    env_cfg.initialization.elevator.max_init_floor = 2
-    env_cfg.terminations.is_success = "pushed_btn"
+    modify_cfg_to_task_push_btn(env_cfg)
+    env_cfg.env.episode_length_s = 5.
 
     policy_config_update = dict(
         algo=dict(

@@ -49,7 +49,6 @@ def main():
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
     modify_cfg_to_task_push_btn(env_cfg)
     modify_cfg_to_robomimic(env_cfg)
-    env_cfg.observation_grouping.update({"semantic":None})
     env_cfg.env.episode_length_s = 2.0
 
     # create environment

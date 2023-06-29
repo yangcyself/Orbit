@@ -294,7 +294,6 @@ def main():
     if args_cli.debug:
         env_cfg.observations.low_dim.enable_corruption = False
         env_cfg.observation_grouping.update({"debug":None})
-    env_cfg.observation_grouping.update({"semantic":None})
 
     EXP_CONFIGS["wrapper_cfg"] = ACTOR_CONFIGS[EXP_CONFIGS["actor_type"]]
     if(EXP_CONFIGS["actor_type"] == "human"):    

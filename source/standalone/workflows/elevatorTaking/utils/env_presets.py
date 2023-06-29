@@ -16,6 +16,7 @@ def modify_cfg_to_robomimic(cfg):
         "policy":"privilege", 
         "rgb":None, 
         "low_dim":None, 
-        "goal":["goal","goal_lowdim"]
+        "goal":["goal","goal_lowdim"],
+        "semantic":None,
     }
     cfg.control.substract_action_from_obs_frame = True
