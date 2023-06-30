@@ -123,11 +123,21 @@ class ObservationsCfg:
         """Observations for low dimension."""
 
         # global group settings
-        enable_corruption: bool = True
+        enable_corruption: bool = False
         # observation terms
-        dof_pos_obsframe = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.01, "max": 0.01}}
+        dof_pos_obsframe = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.01, "max": 0.01},
+                "normalizer": { # the normalizer of dof pos, should match robomimic conterparts
+                    "mean": [0,  0,  0.6,  0,   0,   0.5,  0,   0,  -0.5, 1.5],
+                    "std":  [40, 40, 0.15, 3.5, 1.5, 1.2 , 1.5, 1.5, 1.2, 2.0]
+                }
+        }
         dof_vel_obsframe = {"scale": 0.5, "noise": {"name": "uniform", "min": -0.1, "max": 0.1}}
-        ee_position_obsframe = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.1, "max": 0.1}}
+        ee_position_obsframe = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.1, "max": 0.1},
+                    "normalizer": { # the normalizer of dof pos, should match robomimic conterparts
+                        "mean": [0,  0,  0.6],
+                        "std":  [40, 40, 0.5]
+                    }
+        }
         actions = {}
 
     @configclass

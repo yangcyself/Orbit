@@ -253,16 +253,20 @@ def playback_trajectory_with_env(
                 if(args.debug and (pad_mask is None or pad_mask[i+1]>0)):
                     # check all the obs are the same
                     for k in obs_dict.keys():
+                        if obs_dict[k].shape[0] == 1: # broadcast
+                            obs_dict[k] = obs_dict[k].tile(traj_len, *([1]* (obs_dict[k].dim()-1)))
                         if("pad_mask" in k):
                             continue
-                        elif(k.startswith('rgb')):
-                            err = (obs_dict[k][i+1] - obs[k].squeeze(0).permute(2,0,1)/255.).abs().max()
+                        elif('rgb' in k):
+                            err = (obs_dict[k][i+1] - obs[k].squeeze(0).permute(2,0,1)/255.).pow(2).sum()
+                        elif('semantic' in k):
+                            err = (obs_dict[k][i+1] - obs[k].squeeze(0).permute(2,0,1)/1.).pow(2).sum()
                         else:
                             err = (obs_dict[k][i+1] - obs[k].squeeze(0)).abs().max()
                         if err > 1e-4:
                             print("warning: obs {} diverged by {} at step {}".format(k, err, i))
 
-                image_names = ["rgb:hand_camera_rgb"]
+                image_names = [k for k in obs_dict.keys() if "rgb" in k]
                 if(camera_names is not None): # compare the image from the simulator with the image in the dataset
                     if video_count % video_skip == 0:
                         # concatenate image obs together
@@ -270,9 +274,9 @@ def playback_trajectory_with_env(
                             (obs_dict[k][i+1].permute(1,2,0) * 255.).type(torch.uint8)
                             for k in image_names]
                         im_sim = [obs[k].squeeze(0) for k in image_names]
-                        frame_playback = torch.cat(im_playback, axis=0)
-                        frame_sim = torch.cat(im_sim, axis=0)
-                        frame = torch.cat([frame_playback, frame_sim], axis=1)
+                        frame_playback = torch.cat(im_playback, axis=1)
+                        frame_sim = torch.cat(im_sim, axis=1)
+                        frame = torch.cat([frame_playback, frame_sim], axis=0)
                         video_writer.append_data(frame.numpy())
                     video_count += 1
             if env.is_success()["task"]:
@@ -355,13 +359,17 @@ def get_iterator_from_dataset(args):
 
 
 def get_iterator_from_dataloader(args):
-    config = config_factory("iad")
     ext_cfg = json.load(open(args.cfg, 'r'))
+    config = config_factory(ext_cfg["algo_name"])
     with config.values_unlocked():
         config.update(ext_cfg)
     config.train.data = args.dataset
     config.train.batch_size = 1
     config.train.dataset_keys = ["states", "actions"]
+    config.train.whole_traj_seq = True # get the whole sequence
+    config.train.seq_length = 100 # Forward the first 100 step
+    config.train.seq_length_obs = None 
+    config.train.seq_length_data = None 
     ObsUtils.initialize_obs_utils_with_config(config)
 
     shape_meta = FileUtils.get_shape_metadata_from_dataset(
@@ -372,7 +380,7 @@ def get_iterator_from_dataloader(args):
     if(args.debug):
         shape_meta["all_obs_keys"].append('debug:debug_info')
         shape_meta["all_obs_keys"].append('debug:obs_shift_w')
-        
+
         
     trainset, validset = TrainUtils.load_data_for_training(
         config, obs_keys=shape_meta["all_obs_keys"])

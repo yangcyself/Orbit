@@ -1076,7 +1076,7 @@ class ElevatorEnv(IsaacEnv):
             self.update_cameras()
         class_names = self.cfg.observations.semantic.hand_camera_semantic["class_names"]
         dof_pos = self.robot.articulations.get_joint_positions(clone=True)
-        self.obs_pose_add(dof_pos, px_idx=0, py_idx=1, pr_idx=2)
+        self.obs_pose_add(dof_pos, px_idx=0, py_idx=1, pr_idx=3)
         return {
                 "hand_rgb": self.get_camera_rgb("hand_camera"),
                 "hand_semantic": self.get_camera_semantic("hand_camera", class_names),
@@ -1156,14 +1156,17 @@ class ElevatorObservationManager(ObservationManager):
         """Current end-effector position of the arm."""
         return env.robot.data.ee_state_w[:, :3]
 
-    def dof_pos_obsframe(self, env: ElevatorEnv):
+    def dof_pos_obsframe(self, env: ElevatorEnv, normalizer:dict):
         """DOF positions for the arm in observation frame."""
         dof_pos = env.robot.data.dof_pos.clone()
-        env.obs_pose_add(dof_pos, px_idx=0, py_idx=1, pr_idx=2)
+        dof_pos -= env.robot.data.actuator_pos_offset[:, :]
+        env.obs_pose_add(dof_pos, px_idx=0, py_idx=1, pr_idx=3)
+        norm_mean = torch.tensor(normalizer["mean"]).to(dof_pos)
+        norm_std = torch.tensor(normalizer["std"]).to(dof_pos)
         return scale_transform(
             dof_pos,
-            env.robot.data.soft_dof_pos_limits[:, :, 0],
-            env.robot.data.soft_dof_pos_limits[:, :, 1],
+            norm_mean - norm_std,
+            norm_mean + norm_std,
         )
     
     def dof_vel_obsframe(self, env: ElevatorEnv):
@@ -1172,10 +1175,17 @@ class ElevatorObservationManager(ObservationManager):
         env.obs_pose_add(dof_vel, vx_idx=0, vy_idx=1)
         return dof_vel
     
-    def ee_position_obsframe(self, env: ElevatorEnv):
+    def ee_position_obsframe(self, env: ElevatorEnv, normalizer:dict):
         """Current end-effector position of the arm in observation frame."""
         ee_pos = env.robot.data.ee_state_w[:,:3].clone()
         env.obs_pose_add(ee_pos, px_idx=0, py_idx=1)
+        norm_mean = torch.tensor(normalizer["mean"]).to(ee_pos)
+        norm_std = torch.tensor(normalizer["std"]).to(ee_pos)
+        return scale_transform(
+            ee_pos,
+            norm_mean - norm_std,
+            norm_mean + norm_std,
+        )
         return ee_pos
 
     def elevator_state(self, env: ElevatorEnv):
