@@ -127,15 +127,15 @@ class ObservationsCfg:
         # observation terms
         dof_pos_obsframe = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.01, "max": 0.01},
                 "normalizer": { # the normalizer of dof pos, should match robomimic conterparts
-                    "mean": [0,  0,  0.6,  0,   0,   0.5,  0,   0,  -0.5, 1.5],
-                    "std":  [40, 40, 0.15, 3.5, 1.5, 1.2 , 1.5, 1.5, 1.2, 2.0]
+                    "mean": [0, 0, 0.6,   0, 0, 0.5,  0, 0, -0.5,  1.5],
+                    "std":  [1, 1, 1.0, 1.0, 2,   2,  2, 2, 16.0, 16.0]
                 }
         }
         dof_vel_obsframe = {"scale": 0.5, "noise": {"name": "uniform", "min": -0.1, "max": 0.1}}
         ee_position_obsframe = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.1, "max": 0.1},
                     "normalizer": { # the normalizer of dof pos, should match robomimic conterparts
-                        "mean": [0,  0,  0.6],
-                        "std":  [40, 40, 0.5]
+                        "mean": [0, 0, 0.6],
+                        "std":  [1, 1, 1.0]
                     }
         }
         actions = {}
