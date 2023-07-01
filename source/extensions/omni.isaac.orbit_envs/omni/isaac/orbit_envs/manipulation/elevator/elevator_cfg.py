@@ -87,6 +87,7 @@ class InitializationCfg:
         """
         # the range of the random pose of the obs frame
         obs_frame_bias_range = [40.0, 40.0, math.pi]
+        obs_frame_bias_use_init = True
         enable_replicator = True
         randomize_ground_materials = [
             f"{ASSET_NUCLEUS_DIR}/NVIDIA/Materials/Base/Masonry/Concrete_Rough.mdl",

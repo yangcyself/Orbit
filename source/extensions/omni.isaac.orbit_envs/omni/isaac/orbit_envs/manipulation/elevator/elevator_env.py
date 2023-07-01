@@ -618,9 +618,16 @@ class ElevatorEnv(IsaacEnv):
             self._ik_controller.reset_idx(env_ids)
 
         # -- reset the scene
-        for i in range(3):
-            r = self.cfg.initialization.scene.obs_frame_bias_range[i]
-            self._obs_shift_w[env_ids,i] = ((torch.rand(len(env_ids), )*2*r)-r).to(device=self.device,dtype=torch.float32)
+        if self.cfg.initialization.scene.obs_frame_bias_use_init:
+            dof_pos = self.robot.articulations.get_joint_positions(clone=True)
+            _x, _y, _r = dof_pos[env_ids,0].clone(), dof_pos[env_ids,1].clone(), dof_pos[env_ids,3]
+            self._obs_shift_w[env_ids,0] = - _x * torch.cos(_r) - _y * torch.sin(_r)
+            self._obs_shift_w[env_ids,1] = + _x * torch.sin(_r) - _y * torch.cos(_r)
+            self._obs_shift_w[env_ids,2] = - _r
+        else:
+            for i in range(3):
+                r = self.cfg.initialization.scene.obs_frame_bias_range[i]
+                self._obs_shift_w[env_ids,i] = ((torch.rand(len(env_ids), )*2*r)-r).to(device=self.device,dtype=torch.float32)
 
         # -- reset textures and materials with replicator
 
