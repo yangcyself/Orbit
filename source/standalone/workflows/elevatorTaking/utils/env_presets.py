@@ -8,6 +8,7 @@ def modify_cfg_to_task_push_btn(cfg):
     cfg.terminations.extra_conditions = ["pushed_btn"]
     cfg.terminations.collision = True
     cfg.terminations.episode_timeout = True
+    cfg.robot.rigid_props.disable_gravity = True # copied from ik related config
 
 def modify_cfg_to_robomimic(cfg):
     cfg.observations.return_dict_obs_in_group = True
@@ -20,3 +21,4 @@ def modify_cfg_to_robomimic(cfg):
         "semantic":None,
     }
     cfg.control.substract_action_from_obs_frame = True
+    cfg.robot.rigid_props.disable_gravity = True # copied from ik related config

@@ -49,7 +49,15 @@ def main():
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
     modify_cfg_to_task_push_btn(env_cfg)
     modify_cfg_to_robomimic(env_cfg)
-    env_cfg.env.episode_length_s = 2.0
+    env_cfg.env.episode_length_s = 5.0
+
+    policy_config_update = dict(
+        algo=dict(
+         rollout=dict(
+            temporal_ensemble=True
+         )   
+        )
+    )
 
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=False)
@@ -57,7 +65,12 @@ def main():
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
     # restore policy
-    policy = RobomimicWrapper(checkpoint = args_cli.checkpoint, config_update = {}, device = device, verbose = False)
+    policy = RobomimicWrapper(
+        checkpoint = args_cli.checkpoint, 
+        config_update = policy_config_update, 
+        device = device, 
+        verbose = False
+    )
     # reset environment
     obs_dict = env.reset()
     policy.start_episode()

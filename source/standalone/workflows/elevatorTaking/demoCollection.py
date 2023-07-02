@@ -307,11 +307,8 @@ def main():
         # Set wrapper config
         EXP_CONFIGS["wrapper_cfg"]["checkpoint"] = args_cli.checkpoint
     elif(EXP_CONFIGS["actor_type"] == "ik"):
-        pass
         # enable jacobian computation
         env_cfg.robot.data_info.enable_jacobian = True
-        # enable gravity compensation
-        env_cfg.robot.rigid_props.disable_gravity = True
     else:
         raise ValueError(f"Invalid actor type '{EXP_CONFIGS['actor_type']}'. Supported: 'human', 'rslrl'.")
 
