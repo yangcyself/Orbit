@@ -19,6 +19,7 @@ from .configclass import configclass
 from .dict import class_to_dict, convert_dict_to_backend, print_dict, update_class_from_dict, update_dict
 from .string import to_camel_case, to_snake_case
 from .timer import Timer
+from .rgbImage import RGBImage
 
 __all__ = [
     # arrays
@@ -38,4 +39,6 @@ __all__ = [
     "to_snake_case",
     # timer
     "Timer",
+    # rgb image
+    "RGBImage",
 ]

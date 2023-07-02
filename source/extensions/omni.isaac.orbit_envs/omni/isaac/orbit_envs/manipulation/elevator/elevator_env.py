@@ -35,7 +35,7 @@ from omni.isaac.orbit.utils.dict import class_to_dict
 from omni.isaac.orbit.utils.math import (combine_frame_transforms, matrix_from_quat, quat_apply, quat_from_euler_xyz,
                                          quat_mul, sample_uniform, scale_transform)
 from omni.isaac.orbit.utils.mdp import ObservationManager, RewardManager
-
+from omni.isaac.orbit.utils.rgbImage import RGBImage
 from omni.isaac.orbit_envs.isaac_env import IsaacEnv, VecEnvIndices, VecEnvObs
 
 from .elevator_cfg import ElevatorEnvCfg
@@ -1048,33 +1048,26 @@ class ElevatorEnv(IsaacEnv):
         rgb_data = super(ElevatorEnv, self).render(mode)
         if(mode == "rgb_array" and self.hand_camera is not None):
             assert rgb_data is not None
-            cam_data = (wp.torch.to_torch(self.hand_camera.data.output["rgb"])[:, :, :3]).to(self.device).numpy()
-            # Calculate the height difference
-            height_diff = rgb_data.shape[0] - cam_data.shape[0]
-            # Pad the smaller image with zeros at the bottom
-            if height_diff > 0: # img1 is taller
-                padding = ((0, height_diff), (0, 0), (0, 0))
-                cam_data = np.pad(cam_data, padding, mode='constant')
-            elif height_diff < 0: # img2 is taller
-                padding = ((0, -height_diff), (0, 0), (0, 0))
-                rgb_data = np.pad(rgb_data, padding, mode='constant')            
-            # Concatenate the images horizontally
-            rgb_data = np.concatenate((rgb_data, cam_data), axis=1)
-            if("goal" in self.modalities and "hand_rgb" in self.goal_dict.keys()):
-                goal_rgb = self.goal_dict["hand_rgb"].squeeze(0).numpy()
-                goal_seg = self.goal_dict["hand_semantic"].to(torch.uint8).squeeze(0).numpy()*255
-                goal_imgs = [goal_rgb, *[np.tile(goal_seg[:,:,[i]],(1,1,3)) for i in range(goal_seg.shape[2])]]
-                goal_data = np.concatenate(goal_imgs, axis = 1)
-                width_diff = goal_data.shape[1] - rgb_data.shape[1]
-                if width_diff > 0: # img1 is taller
-                    padding = ((0, 0), (0, width_diff), (0, 0))
-                    rgb_data = np.pad(rgb_data, padding, mode='constant')
-                elif width_diff < 0: # img2 is taller
-                    padding = ((0, 0), (0, -width_diff), (0, 0))
-                    goal_data = np.pad(goal_data, padding, mode='constant')
-                rgb_data = np.concatenate((goal_data, rgb_data), axis=0)
+            rgbimg = RGBImage(rgb_data)
 
-        return rgb_data
+            cam_img = [RGBImage(
+                    (wp.torch.to_torch(cam.data.output["rgb"])[:, :, :3]).to(self.device).numpy())
+                for cam in [self.hand_camera, self.base_camera]
+            ]
+            cam_img = RGBImage.horizontal_concat(cam_img)
+            
+            if("goal" in self.modalities and "hand_rgb" in self.goal_dict.keys()):
+                goal_hand = RGBImage(self.goal_dict["hand_rgb"].squeeze(0).numpy())
+                goal_base = RGBImage(self.goal_dict["base_rgb"].squeeze(0).numpy())
+                goal_img = RGBImage.horizontal_concat([goal_hand, goal_base])
+                cam_img.cat_vert(goal_img)
+
+                goal_seg_hand = RGBImage.from_torch(self.goal_dict["hand_semantic"].squeeze(0)[...,0]*255)
+                goal_seg_base = RGBImage.from_torch(self.goal_dict["hand_semantic"].squeeze(0)[...,0]*255)
+                cam_img.cat_vert(RGBImage.horizontal_concat([goal_seg_hand, goal_seg_base]))
+
+            rgbimg.cat_horz(cam_img)
+        return rgbimg.rgb_data
 
     def random_goal_image(self):
         # dummy step to make sure camera is updated
