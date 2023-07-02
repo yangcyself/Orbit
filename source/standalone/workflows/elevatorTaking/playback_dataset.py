@@ -234,7 +234,7 @@ def playback_trajectory_with_env(
     for i in range(traj_len):
         if action_playback:
             obs, r, d, info =  env.step(actions[i].unsqueeze(0))
-            obs = {f"{kk}:{k}":v for kk,vv in obs.items() for k,v in vv.items()}
+            obs = RobomimicWrapper.process_observation(obs)
             if i < traj_len - 1:
                 # check whether the actions deterministically lead to the same recorded states
                 state_playback = env.get_state()
@@ -258,22 +258,28 @@ def playback_trajectory_with_env(
                         if("pad_mask" in k):
                             continue
                         elif('rgb' in k):
-                            err = (obs_dict[k][i+1] - obs[k].squeeze(0).permute(2,0,1)/255.).pow(2).sum()
+                            err = (obs_dict[k][i+1] - obs[k].squeeze(0)).pow(2).sum()
                         elif('semantic' in k):
-                            err = (obs_dict[k][i+1] - obs[k].squeeze(0).permute(2,0,1)/1.).pow(2).sum()
+                            err = (obs_dict[k][i+1] - obs[k].squeeze(0)).pow(2).sum()
                         else:
                             err = (obs_dict[k][i+1] - obs[k].squeeze(0)).abs().max()
                         if err > 1e-4:
                             print("warning: obs {} diverged by {} at step {}".format(k, err, i))
 
-                image_names = [k for k in obs_dict.keys() if "rgb" in k]
+                image_names = [k for k in obs_dict.keys() if (("semantic" in k) or ("rgb" in k))]
                 if(camera_names is not None): # compare the image from the simulator with the image in the dataset
                     if video_count % video_skip == 0:
                         # concatenate image obs together
                         im_playback = [
-                            (obs_dict[k][i+1].permute(1,2,0) * 255.).type(torch.uint8)
+                                (obs_dict[k][i+1].permute(1,2,0)[:,:,[0]] * 255.).type(torch.uint8).repeat(1,1,3)
+                            if "semantic" in k else
+                                (obs_dict[k][i+1].permute(1,2,0) * 255.).type(torch.uint8)
                             for k in image_names]
-                        im_sim = [obs[k].squeeze(0) for k in image_names]
+                        im_sim = [
+                                (obs[k].squeeze(0).permute(1,2,0)[:,:,[0]] * 255.).type(torch.uint8).repeat(1,1,3)
+                            if "semantic" in k else
+                                (obs[k].squeeze(0).permute(1,2,0) * 255.).type(torch.uint8)
+                            for k in image_names]
                         frame_playback = torch.cat(im_playback, axis=1)
                         frame_sim = torch.cat(im_sim, axis=1)
                         frame = torch.cat([frame_playback, frame_sim], axis=0)

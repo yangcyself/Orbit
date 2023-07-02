@@ -270,14 +270,23 @@ class ButtonPanel:
     @property
     def state_should_dims(self):
         btn_state_dim = self.button.state_should_dims[-1]
-        state_should_dims = [btn_state_dim*i for i in range(self.btn_per_env+1)]
+        state_should_dims = [0]
+        state_should_dims.append(state_should_dims[-1] + btn_state_dim * self.btn_per_env)
+        state_should_dims.append(state_should_dims[-1] + 1) # self.data.nTargets
+        state_should_dims.append(state_should_dims[-1] + self._data.buttonRanking.shape[1]) # self.data.buttonRanking
         return state_should_dims
 
     def get_state(self):
         # Return the underlying state of a simulated environment. Should be compatible with reset_to.
-        return self.button.get_state().view(self.env_count, -1)
+        button_states = self.button.get_state().view(self.env_count, -1)
+        nTargets = torch.tensor([self._data.nTargets]).tile(self.env_count, 1)
+        return torch.cat([button_states, nTargets, self._data.buttonRanking], dim=-1)
     
     def reset_to(self, state):
         # Reset the simulated environment to a given state. Useful for reproducing results
         # state: N x D tensor, where N is the number of environments and D is the dimension of the state
-        self.button.reset_to(state.view(self.btn_count, -1))
+        state_should_dims = self.state_should_dims
+        self.button.reset_to(state[:, state_should_dims[0]: state_should_dims[1]].view(self.btn_count, -1))
+        self._data.nTargets = int(state[:, state_should_dims[1]: state_should_dims[2]][0,0].item())
+        self._data.buttonRanking = state[:, state_should_dims[2]: state_should_dims[3]].to(self._data.buttonRanking)
+        self.reset_semantics(self._data.nTargets)

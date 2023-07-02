@@ -15,27 +15,31 @@ class RobomimicWrapper(RolloutPolicy):
     def start_episode(self):
         self.policy.start_episode()
     
-    def _prepare_observation(self, ob):
-        self.policy._prepare_observation(ob)
-
-    def _process_img(self, img):
-        return (img.permute(2, 0, 1).to(dtype=torch.float32)/255.).clamp(min =0., max=1.)
-
-    def _process_semantic(self, img):
-        return (img.permute(2, 0, 1).to(dtype=torch.float32)/1.).clamp(min =0., max=1.)
-
     def __call__(self, ob, goal=None):
-        obs = {f"{kk}:{k}":v[0] for kk,vv in ob.items() for k,v in vv.items()}
-        for k in obs:
-            if "rgb" in k:
-                obs[k] = self._process_img(obs[k])
-            if "semantic" in k:
-                obs[k] = self._process_semantic(obs[k])
+        obs = self.process_observation(ob)
         return torch.tensor(self.policy(obs)).to(self.device)[None,...]
 
     @property
     def config(self):
         return self.policy.global_config
+    
+    @staticmethod
+    def process_observation(ob):
+        obs = {f"{kk}:{k}":v[0] for kk,vv in ob.items() for k,v in vv.items()}
+        for k in obs:
+            if "rgb" in k:
+                obs[k] = RobomimicWrapper.process_img(obs[k])
+            if "semantic" in k:
+                obs[k] = RobomimicWrapper.process_semantic(obs[k])
+        return obs
+
+    @staticmethod
+    def process_img(img):
+        return (img.permute(2, 0, 1).to(dtype=torch.float32)/255.).clamp(min =0., max=1.)
+
+    @staticmethod
+    def process_semantic(img):
+        return (img.permute(2, 0, 1).to(dtype=torch.float32)/1.).clamp(min =0., max=1.)
 
 class myEnvGym(EnvGym):
 
