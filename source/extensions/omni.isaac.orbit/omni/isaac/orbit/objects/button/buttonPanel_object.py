@@ -236,22 +236,22 @@ class ButtonPanel:
 
 
     # functions for getting and setting button state
-    def get_state_env_any(self, btn_ids: Optional[Sequence[int]] = None):
+    def get_state_env_any(self, c:int=1, btn_ids: Optional[Sequence[int]] = None):
         """Get button state and reduce them within env (with any).
+        c:       The condition for state to be true: the button has to be pushed longer than this value
         btn_ids: The indices of the button to get state from. Defaults to None (all buttons).
                   The indices are counted from 0 for each environment.
                   If it is a 2D Matrix, it means each environment has different set of targets
         Returns:
             torch.tensor: The button state.
         """
+        states = self.button.data.btn_state.view(self.env_count, self.btn_per_env)
         if(type(btn_ids) == torch.Tensor and len(btn_ids.shape) == 2):
-            states = self.button.data.btn_state.view(self.env_count, self.btn_per_env)
-            return states.gather(1, btn_ids).any(dim=1)
+            return (states.gather(1, btn_ids)>=c).any(dim=1)
         else:
-            states = self.button.data.btn_state.view(self.env_count, self.btn_per_env)
             if btn_ids is None:
                 btn_ids = ...
-            return states[:, btn_ids].any(dim=1)
+            return (states[:, btn_ids]>=c).any(dim=1)
     
     def set_state_env_all(self, s:int = 0, btn_ids: Optional[Sequence[int]] = None, env_ids:Optional[Sequence[int]] = None):
         """Set button state and reduce them within env (with all).

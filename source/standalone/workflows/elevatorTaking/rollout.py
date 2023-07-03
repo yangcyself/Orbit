@@ -103,7 +103,7 @@ def main():
     # modify configuration
     modify_cfg_to_robomimic(env_cfg)
     modify_cfg_to_task_push_btn(env_cfg)
-    env_cfg.env.episode_length_s = 5.
+    env_cfg.env.episode_length_s = 10.
 
     policy_config_update = dict(
         algo=dict(

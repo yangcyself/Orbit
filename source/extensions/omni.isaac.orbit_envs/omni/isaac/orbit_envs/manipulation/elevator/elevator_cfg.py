@@ -40,6 +40,7 @@ class ButtonPanelCfg:
     symbols = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "up", "down"]
     translation = (0, -0.75, 1.2)
     orientation = (0.0, 0.0, math.sqrt(1 / 2), math.sqrt(1 / 2))
+    btn_light_cond = 3 # light on the button with continuous pushing of 5 frames
 
 ##
 # MDP settings
@@ -79,6 +80,7 @@ class InitializationCfg:
         nonzero_floor_prob = 1.
         max_init_wait_time = 25.
         max_init_floor = 20
+        hold_button_threshold = 10
 
     @configclass
     class SceneCfg:
@@ -238,9 +240,12 @@ class TerminationsCfg:
     """
     episode_timeout = True  # reset when episode length ended
     is_success = "enter_elevator"  # reset when robot is in elevator
-    is_success_threshold = 0.5  # distance to elevator center
+    enter_elevator_threshold = 0.5  # distance to elevator center
     collision = True  # reset when robot collides with the elevator
     extra_conditions = []
+    hasdone_pushbtn_threshold = 8 # how long the button have to be hold
+    hasdone_pushCorrect_threshold = 8 # how long the button have to be hold
+    hasdone_pushWrong_threshold = 8 # how long the button have to be hold
 
 @configclass
 class ControlCfg:

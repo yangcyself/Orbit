@@ -20,7 +20,7 @@ class ButtonObjectData:
     dof_vel: torch.Tensor = None
     """Dof pos shape is ``(btn_count, dof)``."""
     btn_state: torch.Tensor = None
-    """Whether the button is pushed or not. Shape is ``(btn_count, 1)``."""
+    """How long has this button been pushed. Shape is ``(btn_count, 1)``."""
 
     """
     Properties

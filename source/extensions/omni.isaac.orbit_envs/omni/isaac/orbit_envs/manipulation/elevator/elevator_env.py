@@ -402,7 +402,8 @@ class ElevatorEnv(IsaacEnv):
                         symbol_usd_path = os.path.join(
                             self.cfg.buttonPanel.usd_symbol_root,
                             f"text_{s}.usd"
-                        )
+                        ),
+                        btn_light_cond=self.cfg.buttonPanel.btn_light_cond
                     )
                     for s in self.cfg.buttonPanel.symbols
                 ]
@@ -497,8 +498,10 @@ class ElevatorEnv(IsaacEnv):
         # -- fill up buffers
         self.robot.update_buffers(self.dt)
         self.buttonPanel.update_buffers(self.dt)
-        btn_state = self.elevator.update_buffers(self.buttonPanel.get_state_env_any(), self.dt)
-        self.buttonPanel.set_state_env_all(0, None, torch.nonzero(~btn_state).flatten())
+        btn_state_old = self.buttonPanel.get_state_env_any(self.cfg.initialization.elevator.hold_button_threshold)
+        btn_state = self.elevator.update_buffers(btn_state_old.clone(), self.dt)
+        btn_turned_off = (~btn_state) & btn_state_old.to(btn_state)
+        self.buttonPanel.set_state_env_all(0, None, torch.nonzero(btn_turned_off).flatten())
         self.buttonPanel.update_buffers(self.dt)
         if(self.hand_camera is not None):
             self.hand_camera.update(dt=self.dt)
@@ -718,8 +721,10 @@ class ElevatorEnv(IsaacEnv):
         # -- compute common buffers
         self.robot.update_buffers(self.dt)
         self.buttonPanel.update_buffers(self.dt)
-        btn_state = self.elevator.update_buffers(self.buttonPanel.get_state_env_any(), self.dt)
-        self.buttonPanel.set_state_env_all(0, None, torch.nonzero(~btn_state).flatten())
+        btn_state_old = self.buttonPanel.get_state_env_any(self.cfg.initialization.elevator.hold_button_threshold)
+        btn_state = self.elevator.update_buffers(btn_state_old.clone(), self.dt)
+        btn_turned_off = (~btn_state) & btn_state_old.to(btn_state)
+        self.buttonPanel.set_state_env_all(0, None, torch.nonzero(btn_turned_off).flatten())
         self.buttonPanel.update_buffers(self.dt)
         if(self.hand_camera is not None):
             self.hand_camera.update(dt=self.dt)
@@ -728,13 +733,18 @@ class ElevatorEnv(IsaacEnv):
 
         # -- compute mid-level states # this should happen before reward, termination, observation and success
         elevator_state = self.elevator._sm_state.to(self.device)
-        self._hasdone_pushbtn = torch.where(self.buttonPanel.get_state_env_any(), True, self._hasdone_pushbtn)
+        self._hasdone_pushbtn = torch.where(
+            self.buttonPanel.get_state_env_any(self.cfg.terminations.hasdone_pushbtn_threshold), 
+            True, self._hasdone_pushbtn
+        )
         self._hasdone_pushCorrect = torch.where(self.buttonPanel.get_state_env_any(
-                self.buttonPanel.data.buttonRanking[:,:self.buttonPanel.data.nTargets]
+                c = self.cfg.terminations.hasdone_pushCorrect_threshold,
+                btn_ids = self.buttonPanel.data.buttonRanking[:,:self.buttonPanel.data.nTargets],
             ), True, self._hasdone_pushCorrect
         )
         self._hasdone_pushWrong = torch.where(self.buttonPanel.get_state_env_any(
-                self.buttonPanel.data.buttonRanking[:,self.buttonPanel.data.nTargets:]
+                c = self.cfg.terminations.hasdone_pushWrong_threshold,
+                btn_ids = self.buttonPanel.data.buttonRanking[:,self.buttonPanel.data.nTargets:],
             ), True, self._hasdone_pushWrong
         )
         self.debug_tracker[:,1] += 1
@@ -980,7 +990,7 @@ class ElevatorEnv(IsaacEnv):
         and additional optional keys corresponding to other task criteria.
         """
         robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
-        success_dict = {"enter_elevator": torch.where(robot_pos_error < self.cfg.terminations.is_success_threshold, 1, 0),    
+        success_dict = {"enter_elevator": torch.where(robot_pos_error < self.cfg.terminations.enter_elevator_threshold, 1, 0),    
                         "pushed_btn": torch.where(self._hasdone_pushbtn, 1, 0),
                         "pushed_correct": torch.where(self._hasdone_pushCorrect, 1, 0),
                         "pushed_wrong": torch.where(self._hasdone_pushWrong, 1, 0),

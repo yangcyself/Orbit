@@ -18,3 +18,6 @@ class ButtonObjectCfg:
     """USD file for the symbol on the button. None for no symbol."""
     scale: Tuple[float, float, float] = (1.0, 1.0, 1.0)
     """Scale to spawn the object with. Defaults to (1.0, 1.0, 1.0)."""
+    btn_light_cond: int = 1
+    """Lights up the button after pushing it for n frames"""
+

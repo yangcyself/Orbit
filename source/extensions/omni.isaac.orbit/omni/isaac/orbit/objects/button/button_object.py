@@ -149,8 +149,7 @@ class ButtonObject:
         # -- frame states
         self.data.dof_pos = self.articulations.get_joint_positions(indices=self._ALL_INDICES, clone=False)
         self.data.dof_vel = self.articulations.get_joint_velocities(indices=self._ALL_INDICES, clone=False)
-        self.data.btn_state = torch.zeros((self.count, 1), dtype=torch.bool, device=self.device)
-        self.data.btn_state = torch.zeros((self.count, 1), dtype=torch.bool, device=self.device)
+        self.data.btn_state = torch.zeros((self.count, 1), dtype=torch.int32, device=self.device)
 
     def reset_buffers(self, env_ids: Optional[Sequence[int]] = None):
         """Resets all internal buffers.
@@ -167,7 +166,7 @@ class ButtonObject:
         self.articulations.set_joint_positions(torch.tensor([[0.005,math.pi]],device=self.device).tile(len(env_ids),1), env_ids)
         # Set velocities to zero
         self.articulations.set_joint_velocities(torch.full((len(env_ids), 2),0.,device = self.device), env_ids)
-        self.data.btn_state[:,:] = False
+        self.data.btn_state[:,:] = 0
 
 
     def update_buffers(self, dt: float = None):
@@ -182,10 +181,10 @@ class ButtonObject:
         # frame states
         self.data.dof_pos[:,:] = self.articulations.get_joint_positions(indices=self._ALL_INDICES, clone=False)
         self.data.dof_vel[:,:] = self.articulations.get_joint_velocities(indices=self._ALL_INDICES, clone=False)
-        self.data.btn_state[:,:] = torch.where(self.data.btn_isdown, True, self.data.btn_state)
+        self.data.btn_state[self.data.btn_isdown] += 1
 
         # Flip the light if the button is pressed or have btn_state
-        light_on = self.data.btn_state[:,[0]] | self.data.btn_isdown[:,[0]]
+        light_on = self.data.btn_state[:,[0]]>= self.cfg.btn_light_cond | self.data.btn_isdown[:,[0]]
         self.articulations.set_joint_positions((~light_on) * math.pi, self._ALL_INDICES, torch.tensor([1]))
 
     @property
