@@ -592,9 +592,11 @@ class ElevatorEnv(IsaacEnv):
         self._randomize_elevator_initial_state(env_ids=env_ids)
         self._randomize_buttonPanel(env_ids=env_ids)
         
-
         # --desire position
-        self.robot_des_pose_w[env_ids, 0:3] =  torch.tensor([[1.53, -2.08, -1.61]], device = self.device)
+        self.enter_elevator_des_pos[env_ids, 0:3] = torch.tensor([[1.53, -2.08, -1.61]], device = self.device)
+        self.moveto_button_des_pos[env_ids, 0:2] =  torch.tensor([self.cfg.buttonPanel.translation[:2]], device = self.device)
+        self.moveto_button_des_pos[env_ids, 1] += 0.75
+        self.moveto_button_des_pos[env_ids, 2] = -math.pi/2
 
         # -- Reward logging
         # fill extras with episode information
@@ -708,6 +710,12 @@ class ElevatorEnv(IsaacEnv):
             if self.cfg.control.substract_action_from_obs_frame:
                 self.obs_pose_subtract(actions, px_idx=0, py_idx=1, pr_idx=3)
             self.robot_actions[:, :] = actions
+        elif self.cfg.control.control_type == "base":
+            actions = self.actions.clone()
+            if self.cfg.control.substract_action_from_obs_frame:
+                self.obs_pose_subtract(actions, px_idx=0, py_idx=1, pr_idx=3)
+            self.robot_actions[:, :4] = actions
+            self.robot_actions[:, 4:] = 0.
         # perform physics stepping
         for _ in range(self.cfg.control.decimation):
             # set actions into buffers
@@ -891,6 +899,8 @@ class ElevatorEnv(IsaacEnv):
             self.ee_des_pos_base = torch.tensor([[0.32, 0, 0.4]], device=self.device).tile((self.num_envs, 1))
         elif self.cfg.control.control_type == "default":
             self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof
+        elif self.cfg.control.control_type == "base":
+            self.num_actions = self.robot.base_num_dof
         else:
             raise ValueError("Unsupported control type: {}".format(self.cfg.control.control_type))
 
@@ -901,8 +911,9 @@ class ElevatorEnv(IsaacEnv):
         # robot joint actions
         self.robot_actions = torch.zeros((self.num_envs, self.robot.num_actions), device=self.device)
 
-        # commands
-        self.robot_des_pose_w = torch.zeros((self.num_envs, 3), device=self.device)
+        # desposes, x,y,r
+        self.enter_elevator_des_pos = torch.zeros((self.num_envs, 3), device=self.device)
+        self.moveto_button_des_pos = torch.zeros((self.num_envs, 3), device=self.device)
 
         # the transition from the world frame to the frame of the observation
         ## The robot observation should add this transform
@@ -962,6 +973,18 @@ class ElevatorEnv(IsaacEnv):
                 (len(env_ids), 4), device=self.device
             )
             self.robot.set_dof_state(dof, dof_vel, env_ids=env_ids)
+        if(self.cfg.initialization.robot.position_cat=="see-point"):
+            dof, dof_vel = self.robot.get_default_dof_state(env_ids)
+            dof[:, 0:3] = sample_uniform(
+                torch.tensor([self.cfg.initialization.robot.position_uniform_min], device=self.device)[:, :3], 
+                torch.tensor([self.cfg.initialization.robot.position_uniform_max], device=self.device)[:, :3], 
+                (len(env_ids), 3), device=self.device
+            )
+            l = torch.tensor([self.cfg.initialization.robot.see_point_target], device=self.device)[:, :2] - dof[:, 0:2]
+            yaw = torch.atan2(l[:, 1], l[:, 0])
+            dof[:,3] = yaw + (torch.rand((len(env_ids),), device=self.device) * 2. - 1.) * self.cfg.initialization.robot.see_point_FOV
+            self.robot.set_dof_state(dof, dof_vel, env_ids=env_ids)
+        
 
     def _randomize_elevator_initial_state(self, env_ids: torch.Tensor):
         movingElevatorFlag = torch.rand((len(env_ids),),device=self.device) < self.cfg.initialization.elevator.moving_elevator_prob
@@ -989,8 +1012,13 @@ class ElevatorEnv(IsaacEnv):
         { str: bool } with at least a "task" key for the overall task success,
         and additional optional keys corresponding to other task criteria.
         """
-        robot_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.robot_des_pose_w[:,:2], dim=1)
-        success_dict = {"enter_elevator": torch.where(robot_pos_error < self.cfg.terminations.enter_elevator_threshold, 1, 0),    
+        enter_elevator_pos_error = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.enter_elevator_des_pos[:,:2], dim=1)
+        moveto_button_pos_error_p = torch.norm(self.robot.data.base_dof_pos[:,:2] - self.moveto_button_des_pos[:,:2], dim=1)
+        moveto_button_pos_error_r = (self.robot.data.base_dof_pos[:,3] - self.moveto_button_des_pos[:,2]).abs()
+        success_dict = {"enter_elevator": torch.where(enter_elevator_pos_error < self.cfg.terminations.enter_elevator_threshold, 1, 0), 
+                        "moveto_button": torch.where(
+                            (moveto_button_pos_error_p < self.cfg.terminations.move_to_button_thresholds[0])
+                            &(moveto_button_pos_error_r< self.cfg.terminations.move_to_button_thresholds[1]), 1, 0),     
                         "pushed_btn": torch.where(self._hasdone_pushbtn, 1, 0),
                         "pushed_correct": torch.where(self._hasdone_pushCorrect, 1, 0),
                         "pushed_wrong": torch.where(self._hasdone_pushWrong, 1, 0),
@@ -1013,7 +1041,7 @@ class ElevatorEnv(IsaacEnv):
             input_vec[:, py_idx] = y + px * torch.sin(r) + py * torch.cos(r)
         if(pr_idx is not None):
             input_vec[:, pr_idx] = r + input_vec[:, pr_idx]
-            input_vec[:, pr_idx] = math.atan2(math.sin(input_vec[:, pr_idx]), math.cos(input_vec[:, pr_idx]))
+            input_vec[:, pr_idx] = torch.atan2(torch.sin(input_vec[:, pr_idx]), torch.cos(input_vec[:, pr_idx]))
         if(vx_idx is not None and vy_idx is not None):
             ##! the clones are necessary to avoid in-place operations
             vx,vy = input_vec[:, vx_idx].clone(), input_vec[:, vy_idx].clone()
@@ -1030,7 +1058,7 @@ class ElevatorEnv(IsaacEnv):
             input_vec[:, py_idx] = -(px - x) * torch.sin(r) + (py - y) * torch.cos(r)
         if(pr_idx is not None):
             input_vec[:, pr_idx] = input_vec[:, pr_idx] - r
-            input_vec[:, pr_idx] = math.atan2(math.sin(input_vec[:, pr_idx]), math.cos(input_vec[:, pr_idx]))
+            input_vec[:, pr_idx] = torch.atan2(torch.sin(input_vec[:, pr_idx]), torch.cos(input_vec[:, pr_idx]))
         if(vx_idx is not None and vy_idx is not None):
             vx,vy = input_vec[:, vx_idx].clone(), input_vec[:, vy_idx].clone()
             input_vec[:, vx_idx] = vx * torch.cos(r) + vy * torch.sin(r)
@@ -1352,14 +1380,14 @@ class ElevatorRewardManager(RewardManager):
         return reward
 
     def tracking_reference_enter(self, env: ElevatorEnv, sigma):        
-        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:3] - env.robot_des_pose_w[:,:3], dim=1)
+        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:3] - env.enter_elevator_des_pos[:,:3], dim=1)
         reward = torch.exp(-robot_pos_error / sigma)
         elevator_state = env.elevator._sm_state.to(env.device)
         reward[(elevator_state[:,0] != 1)] = 0.
         return reward
 
     def tracking_reference_waitin(self, env: ElevatorEnv, sigma):
-        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:3] - env.robot_des_pose_w[:,:3], dim=1)
+        robot_pos_error = torch.norm(env.robot.data.base_dof_pos[:,:3] - env.enter_elevator_des_pos[:,:3], dim=1)
         reward = torch.exp(-robot_pos_error / sigma)
         # no reward if the door is closed and robot is outside of the elevator
         elevator_state = env.elevator._sm_state.to(env.device)

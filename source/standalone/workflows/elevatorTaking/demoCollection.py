@@ -64,7 +64,7 @@ from omni.isaac.orbit.controllers.differential_inverse_kinematics import (
 from omni.isaac.orbit.utils.math import quat_mul
 
 sys.path.append(os.path.dirname(__file__))
-from utils.env_presets import modify_cfg_to_task_push_btn, modify_cfg_to_robomimic
+from utils.env_presets import modify_cfg_to_task_push_btn, modify_cfg_to_task_move_to_btn, modify_cfg_to_robomimic
 
 # Default arguments for actor wrappers
 ACTOR_CONFIGS = {
@@ -257,7 +257,10 @@ class IK_Actor(ActorWrapperBase):
         alpha = self.actor_cfg["base_target_alpha"]
         base_actions = (1-alpha) * current_dof[:,:4] + alpha * self.target_base_pose
         robot_actions = torch.cat([base_actions, arm_actions],axis = 1)
-        return robot_actions
+        if self.env.cfg.control.control_type == "default":
+            return robot_actions
+        elif self.env.cfg.control.control_type == "base":
+            return robot_actions[:,:4]
 
     def reset_idx(self, env_ids = None):
         """Assume this function is called after env.reset()
@@ -285,8 +288,9 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     # modify configuration
-    modify_cfg_to_task_push_btn(env_cfg)
     modify_cfg_to_robomimic(env_cfg)
+    # modify_cfg_to_task_push_btn(env_cfg)
+    modify_cfg_to_task_move_to_btn(env_cfg)
     env_cfg.env.episode_length_s = 5.
     env_cfg.observations.return_dict_obs_in_group = True
     # temp config only for RSLRL collection

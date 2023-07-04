@@ -59,10 +59,17 @@ class InitializationCfg:
            cfg.initialization.robot
         """
         # category
-        position_cat: str = "default"  # randomize position: "default", "uniform"
+        position_cat: str = "default"  # randomize position: "default", "uniform", "see-point"
+        # default: use the default position
+        # uniform: randomize position in the uniform range
+        # see-point: randomize position in the uniform range and ensure the robot can see the point
+
         # randomize position
         position_uniform_min = [0.9, 0.3, 0.3, -3.1]  # position (x,y,z,yaw)
         position_uniform_max = [2.1, 2.,  0.7, 0.]  # position (x,y,z,yaw)
+        # see point configs
+        see_point_target = [1.5, 1.5]  # target point (x,y)
+        see_point_FOV = 0.5  # half field of view of the robot (in radian)
 
     @configclass
     class ButtonPanelCfg:
@@ -166,6 +173,7 @@ class ObservationsCfg:
     class SemanticCfg:
         """
         semantic
+        cfg.observations.semantic
         """
         hand_camera_semantic = {"class_names":[
             ("button_target",), # first channel
@@ -241,6 +249,7 @@ class TerminationsCfg:
     episode_timeout = True  # reset when episode length ended
     is_success = "enter_elevator"  # reset when robot is in elevator
     enter_elevator_threshold = 0.5  # distance to elevator center
+    move_to_button_thresholds = [0.3, 0.05]  # distance to desired position and desired yaw
     collision = True  # reset when robot collides with the elevator
     extra_conditions = []
     hasdone_pushbtn_threshold = 8 # how long the button have to be hold
@@ -252,7 +261,7 @@ class ControlCfg:
     """Processing of MDP actions."""
 
     # action space
-    control_type = "default"  # "default", "inverse_kinematics", "ohneHand"
+    control_type = "default"  # "default", "inverse_kinematics", "base"
     substract_action_from_obs_frame = True
     # decimation: Number of control action updates @ sim dt per policy dt
     decimation = 2
