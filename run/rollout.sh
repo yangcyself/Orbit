@@ -10,6 +10,9 @@ if [ "$#" -lt 2 ]; then
     exit 1
 fi
 
+orig_command="$0 $*"
+start_time=$(date)
+
 # Parse the arguments
 while [ "$#" -gt 0 ]; do
     case $1 in
@@ -55,3 +58,5 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+sendMeTelegram.sh "Rollout finished" $'\n' "${orig_command}" $'\n\n' "start: ${start_time}" $'\n' "end:   $(date)"
