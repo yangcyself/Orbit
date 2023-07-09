@@ -1068,6 +1068,24 @@ class ElevatorEnv(IsaacEnv):
     def obs_shift_w(self):
         return self._obs_shift_w
 
+    def zero_action(self):
+        """The action that makes the robot keep the current state
+        """
+        dof_pos = self.robot.articulations.get_joint_positions(clone=True)
+        if self.cfg.control.control_type == "inverse_kinematics":
+            return torch.zeros_like(self.actions)
+        elif self.cfg.control.control_type == "default":
+            actions = dof_pos
+            if self.cfg.control.substract_action_from_obs_frame:
+                self.obs_pose_add(actions, px_idx=0, py_idx=1, pr_idx=3)
+            actions -= self.robot.data.actuator_pos_offset
+            return actions
+        elif self.cfg.control.control_type == "base":
+            actions = dof_pos[:, :4]
+            if self.cfg.control.substract_action_from_obs_frame:
+                self.obs_pose_add(actions, px_idx=0, py_idx=1, pr_idx=3)
+            return actions
+
 
     # overwrite the render function of the base env
     # concatenat the camera observation desides its viewpoint
