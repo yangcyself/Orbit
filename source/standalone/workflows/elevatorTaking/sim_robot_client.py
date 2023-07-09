@@ -60,6 +60,8 @@ class RobotClient:
         return myNumpyArray.from_buffer(recv_data)[0]
 
     def _set_value_ref(self, name, ref_name):
+        if(isinstance(ref_name, ServerValue)):
+            ref_name = ref_name.id
         self._send(myStr("set_value_ref").to_bytes() 
                     + myStr(name).to_bytes()
                     + myStr(ref_name).to_bytes()
@@ -88,6 +90,28 @@ class RobotClient:
         self._set_value("moveto_target_pos", target_pos)
         self._exec_command("moveto", 15)
 
+    def cmd_pushbtn(self, goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic):
+        """Robot Action pushbtn
+           - Read: 
+             - pushbtn_goal_dof_pos, 
+             - pushbtn_goal_base_rgb, 
+             - pushbtn_goal_base_semantic
+             - pushbtn_goal_hand_rgb
+             - pushbtn_goal_hand_semantic
+           - Write: None
+        Args:
+            goal_dof (ServerValue)
+            goal_base_rgb (ServerValue)
+            goal_base_semantic (numpy.ndarray(uint8[ W,H,2]))
+            goal_hand_rgb (ServerValue)
+            goal_hand_semantic (numpy.ndarray(uint8[ W,H,2]))
+        """
+        self._set_value_ref("pushbtn_goal_dof_pos", goal_dof)
+        self._set_value_ref("pushbtn_goal_base_rgb", goal_base_rgb)
+        self._set_value("pushbtn_goal_base_semantic", goal_base_semantic)
+        self._set_value_ref("pushbtn_goal_hand_rgb", goal_hand_rgb)
+        self._set_value("pushbtn_goal_hand_semantic", goal_hand_semantic)
+        self._exec_command("pushbtn", 100)
 
 
 if __name__ == '__main__':
@@ -95,13 +119,29 @@ if __name__ == '__main__':
     import time
     time.sleep(5)
     print("start")
-    debug_info = client.get_server_value("obs/debug/debug_info")
-    print("debug_info",debug_info.get_value())
-    for i in range(100):
-        _debug = client.get_server_value("obs/debug/debug_info")
-        print(_debug.get_value())
-        client.cmd_moveto(np.array([-2 + 1* np.sin(i/50*3.14), -1 + 1 * np.cos(i/50*3.14)]))
-        time.sleep(2)
-    print("last",debug_info.get_value())
+    pushbtn_goal_dof = client.get_server_value("obs/low_dim/dof_pos_obsframe")
+    pushbtn_goal_base_rgb = client.get_server_value("obs/rgb/base_camera_rgb")
+    pushbtn_goal_base_semantic = client.get_server_value("obs/semantic/base_camera_semantic")
+    pushbtn_goal_hand_rgb = client.get_server_value("obs/rgb/hand_camera_rgb")
+    pushbtn_goal_hand_semantic = client.get_server_value("obs/semantic/hand_camera_semantic")
 
+    client.cmd_moveto(np.array([0.2 , -0.1]))
+
+    goal_base_semantic = pushbtn_goal_base_semantic.get_value()
+    goal_hand_semantic = pushbtn_goal_hand_semantic.get_value()
+    client.cmd_pushbtn(pushbtn_goal_dof, 
+        pushbtn_goal_base_rgb, 
+        goal_base_semantic, 
+        pushbtn_goal_hand_rgb, 
+        goal_hand_semantic)
+
+    import matplotlib.pyplot as plt
+    plt.imshow(pushbtn_goal_base_rgb.get_value()[0])
+    plt.figure()
+    plt.imshow(goal_base_semantic[0,:,:,0])
+    plt.figure()
+    plt.imshow(pushbtn_goal_hand_rgb.get_value()[0])
+    plt.figure()
+    plt.imshow(goal_hand_semantic[0,:,:,0])
+    plt.show()
 

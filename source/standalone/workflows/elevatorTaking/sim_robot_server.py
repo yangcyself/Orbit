@@ -74,10 +74,6 @@ class tcpRecipient(threading.Thread):
                 print_error(f"Error when executing command {cmd}: {e}")
         self.conn.close()
 
-            # print(f"Received: {data}")
-            # reply = b"Received your data!"
-            # send_data(self.conn, reply)
-
     def parse_data(self, data):
         """Parse the data received from the client."""
         cmd, l = myStr.from_buffer(data)
@@ -129,16 +125,44 @@ class RobotActionMoveto(RobotActionBase):
         res[0,:2] = self.target_pos[:2]
         return res
 
+class RobotActionPushbtn(RobotActionBase):
+    """The action to push the button."""
+    def __init__(self, race_data, checkpoint, cfg, device):
+        self.race_data = race_data
+        self.policy = RobomimicWrapper(
+            checkpoint = checkpoint, 
+            config_update = cfg, 
+            device = device, 
+            verbose = False
+        )
+        self.policy.start_episode()
+    
+    def __call__(self, obs_dict):
+        """Push the button."""
+        goal_dict = {
+          k : torch.tensor(self.race_data.getdata(f"pushbtn_{k}"))
+          for k in [
+            "goal_dof_pos", 
+            "goal_base_rgb",
+            "goal_base_semantic",
+            "goal_hand_rgb",
+            "goal_hand_semantic"
+          ]  
+        }
+        obs_dict.update({"goal": goal_dict})
+        actions = self.policy(obs_dict)
+        return actions
 
 class RobotActorServer:
     """The server that provide robot high-level control interface.
     It waits tcp commands and get actions from the policy.
     """
-    def __init__(self, env, policycfgs, port):
+    def __init__(self, env, policycfgs, port, device=None):
         self.env = env 
         self.policycfgs = policycfgs
         self.port = port
         self.race_data = Racedata()
+        self.device = device
         
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind(('localhost', port))
@@ -159,6 +183,11 @@ class RobotActorServer:
         if action_type == "moveto":
             target_pos = self.race_data.getdata("moveto_target_pos")
             return RobotActionMoveto(target_pos)
+        elif action_type == "pushbtn":
+            checkpoint = self.policycfgs["pushbtn"]["checkpoint"]
+            cfg = self.policycfgs["pushbtn"]["cfg"]
+            device = self.device
+            return RobotActionPushbtn(self.race_data, checkpoint, cfg, device)
         else:
             raise NotImplementedError
 
@@ -169,7 +198,6 @@ class RobotActorServer:
             for k,v in vv.items():
                 self.race_data.setdata("obs/"+kk+"/"+k, v.cpu().numpy())
         
-        action = obs_dict["policy"]
         if cmd is not None and cmd != self.current_cmd:
             print("executing new command:", cmd)
             self.current_cmd = cmd
@@ -185,7 +213,6 @@ class RobotActorServer:
         return self.env.zero_action()
 
 
-
 def main():
     """Run a trained policy from robomimic with Isaac Orbit environment."""
     # parse configuration
@@ -195,30 +222,24 @@ def main():
     modify_cfg_to_robomimic(env_cfg)
     env_cfg.terminations.episode_timeout = False
     env_cfg.observation_grouping.update({"debug":None})
-    policy_config_update = dict(
-        algo=dict(
-         rollout=dict(
-            temporal_ensemble=True
-         )   
-        )
-    )
+    del env_cfg.observation_grouping["goal"]
+    action_cfgs = {
+        "moveto": {},
+        "pushbtn": {
+            "checkpoint": args_cli.checkpoint,
+            "cfg": {}
+        }
+    }
 
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=False)
+    # reset environment
+    obs_dict = env.reset()
 
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
-    server = RobotActorServer(env, policy_config_update, 12345)
-    # restore policy
-    # policy = RobomimicWrapper(
-    #     checkpoint = args_cli.checkpoint, 
-    #     config_update = policy_config_update, 
-    #     device = device, 
-    #     verbose = False
-    # )
-    # reset environment
-    obs_dict = env.reset()
-    # policy.start_episode()
+
+    server = RobotActorServer(env, action_cfgs, 12345)
     # simulate environment
     while simulation_app.is_running():
         # compute actions
@@ -228,8 +249,7 @@ def main():
         # check if simulator is stopped
         if env.unwrapped.sim.is_stopped():
             break
-        if done.any():
-            policy.start_episode()
+
     # close the simulator
     env.close()
     simulation_app.close()
