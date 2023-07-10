@@ -76,6 +76,13 @@ class RobotClient:
                     + myInt(count).to_bytes()
         )
 
+    def _get_command(self):
+        self._send(myStr("get_command").to_bytes())
+        recv_data = self._recv()
+        cmd,l = myStr.from_buffer(recv_data)
+        count, _ = myInt.from_buffer(recv_data[l:])
+        return cmd, count
+
     # third layer of abstraction
     def get_server_value(self, name):
         return ServerValue(name, self)
@@ -117,7 +124,6 @@ class RobotClient:
 if __name__ == '__main__':
     client = RobotClient("localhost", 12345)
     import time
-    time.sleep(5)
     print("start")
     pushbtn_goal_dof = client.get_server_value("obs/low_dim/dof_pos_obsframe")
     pushbtn_goal_base_rgb = client.get_server_value("obs/rgb/base_camera_rgb")
@@ -125,7 +131,11 @@ if __name__ == '__main__':
     pushbtn_goal_hand_rgb = client.get_server_value("obs/rgb/hand_camera_rgb")
     pushbtn_goal_hand_semantic = client.get_server_value("obs/semantic/hand_camera_semantic")
 
+    print("get command 0", client._get_command())
+
     client.cmd_moveto(np.array([0.2 , -0.1]))
+
+    print("get command 1", client._get_command())
 
     goal_base_semantic = pushbtn_goal_base_semantic.get_value()
     goal_hand_semantic = pushbtn_goal_hand_semantic.get_value()
@@ -134,6 +144,8 @@ if __name__ == '__main__':
         goal_base_semantic, 
         pushbtn_goal_hand_rgb, 
         goal_hand_semantic)
+
+    print("get command 2", client._get_command())
 
     import matplotlib.pyplot as plt
     plt.imshow(pushbtn_goal_base_rgb.get_value()[0])

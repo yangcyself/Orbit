@@ -48,9 +48,10 @@ from utils.tcp_utils import send_data, recv_data, Racedata, print_warning, print
 from utils.myTypes import myNumpyArray, myStr, myInt, myFloat
 
 class tcpRecipient(threading.Thread):
-    def __init__(self, conn, race_data):
+    def __init__(self, host, port, race_data):
         threading.Thread.__init__(self)
-        self.conn = conn
+        self.host = host
+        self.port = port
         self.race_data = race_data
 
         self.signatures = {
@@ -59,20 +60,35 @@ class tcpRecipient(threading.Thread):
             "set_value_ref": (myStr, myStr),
             "del_value": (myStr,),
             "exec_command": (myStr, myInt), # command, count
+            "get_command": tuple(), # command, count
         }
 
     def run(self):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind((self.host, self.port))
+        server.listen(1)
+
+        print("Server started.")
         while True:
-            data = recv_data(self.conn)
-            if data is None:
-                print("No more data. Closing connection...")
-                break
-            cmd, args = self.parse_data(data)
-            try:
-                getattr(self, cmd)(*args)
-            except Exception as e:
-                print_error(f"Error when executing command {cmd}: {e}")
-        self.conn.close()
+            print("Waiting for connection...")
+            conn, addr = server.accept()
+            self.conn = conn
+            self.addr = addr
+            print(f"Connection from {addr}")
+
+            while True:
+                data = recv_data(self.conn)
+                if data is None:
+                    print("No more data. Closing connection...")
+                    break
+                cmd, args = self.parse_data(data)
+                try:
+                    getattr(self, cmd)(*args)
+                except Exception as e:
+                    print_error(f"Error when executing command {cmd}: {e}")
+            self.conn.close()
+            self.race_data.reset() # reset the communication data once the connection is closed
+            print("Connection closed.")
 
     def parse_data(self, data):
         """Parse the data received from the client."""
@@ -102,6 +118,12 @@ class tcpRecipient(threading.Thread):
 
     def exec_command(self, cmd, count):
         self.race_data.setcommand(cmd, count)
+
+    def get_command(self):
+        cmd, count = self.race_data.getcommand()
+        if cmd is None:
+            cmd = "none"
+        send_data(self.conn, myStr(cmd).to_bytes()+myInt(count).to_bytes())
 
 
 class RobotActionBase:
@@ -164,17 +186,7 @@ class RobotActorServer:
         self.race_data = Racedata()
         self.device = device
         
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind(('localhost', port))
-        server.listen(1)
-
-        print("Server started. Waiting for connections...")
-        conn, addr = server.accept()
-        self.conn = conn
-        self.addr = addr
-        print(f"Connection from {addr}")
-
-        self.tcp_recipient = tcpRecipient(conn, self.race_data)
+        self.tcp_recipient = tcpRecipient("localhost", port, self.race_data)
         self.tcp_recipient.start()
         self.current_cmd = None
         self.current_action: RobotActionBase = None
@@ -193,7 +205,7 @@ class RobotActorServer:
 
     def step(self, obs_dict):
         """Get actions from the policy."""
-        cmd, count = self.race_data.getcommand()
+        cmd, count = self.race_data.popcommand()
         for kk, vv in obs_dict.items():
             for k,v in vv.items():
                 self.race_data.setdata("obs/"+kk+"/"+k, v.cpu().numpy())
@@ -233,13 +245,12 @@ def main():
 
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=False)
-    # reset environment
-    obs_dict = env.reset()
-
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
+    server = RobotActorServer(env, action_cfgs, 12345, device = device)
 
-    server = RobotActorServer(env, action_cfgs, 12345)
+    # reset environment
+    obs_dict = env.reset()
     # simulate environment
     while simulation_app.is_running():
         # compute actions

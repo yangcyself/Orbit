@@ -92,6 +92,14 @@ class Racedata(object):
         self.command_lock.acquire()
         command = self.command
         count = self.command_count
+        self.command_lock.release()
+        return command, count
+
+    def popcommand(self):
+        # get command and count, set command to None
+        self.command_lock.acquire()
+        command = self.command
+        count = self.command_count
         self.command = None
         self.command_lock.release()
         return command, count
@@ -102,6 +110,17 @@ class Racedata(object):
         command_count = self.command_count
         self.command_lock.release()
         return command_count
+
+    def reset(self):
+        self.meta_lock.acquire()
+        self.locks = {}
+        self.values = {}
+        self.meta_lock.release()
+
+        self.command_lock.acquire()
+        self.command = None
+        self.command_count = 0
+        self.command_lock.release()
 
 
 class bcolors:
