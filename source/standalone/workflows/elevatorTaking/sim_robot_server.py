@@ -133,6 +133,7 @@ class RobotActionBase:
     """The base class for robot actions."""
     def __init__(self, race_data, device):
         self.race_data = race_data
+        self.device = device
         task_frame_shift = race_data.getdata("base_task_frame_shift")
         if task_frame_shift.ndim == 1: # add batch dim
             task_frame_shift = task_frame_shift.reshape(1,-1)
@@ -206,7 +207,7 @@ class RobotActionRoboMimicBase(RobotActionBase):
         self.policy.start_episode()
         self.obscfg_dict = cfg.observations.to_dict()
 
-    def process_obs(obs_dict):
+    def process_obs(self, obs_dict):
         # Add goal observation
         goal_dict = {
           k : torch.tensor(self.race_data.getdata(f"mimic_{k}"))
@@ -220,11 +221,15 @@ class RobotActionRoboMimicBase(RobotActionBase):
         }
         obs_dict.update({"goal": goal_dict})
 
+        for kk,vv in obs_dict.items():
+            for k,v in vv.items():
+                obs_dict[kk][k] = v.to(self.device)
+
         # Task frame shift
-        self.task_frame_substract(obs_dict["goal"]["goal_dof_pos"], px_idx=0, py_idx=1, pr_idx=3)
-        self.task_frame_substract(obs_dict["low_dim"]["dof_pos_obsframe"], px_idx=0, py_idx=1, pr_idx=3)
-        self.task_frame_substract(obs_dict["low_dim"]["dof_vel_obsframe"], vx_idx=0, vy_idx=1)
-        self.task_frame_substract(obs_dict["low_dim"]["ee_position_obsframe"], px_idx=0, py_idx=1)
+        self.task_frame_subtract(obs_dict["goal"]["goal_dof_pos"], px_idx=0, py_idx=1, pr_idx=3)
+        self.task_frame_subtract(obs_dict["low_dim"]["dof_pos_obsframe"], px_idx=0, py_idx=1, pr_idx=3)
+        self.task_frame_subtract(obs_dict["low_dim"]["dof_vel_obsframe"], vx_idx=0, vy_idx=1)
+        self.task_frame_subtract(obs_dict["low_dim"]["ee_position_obsframe"], px_idx=0, py_idx=1)
 
         # Observation normalization
         for kk,vv in obs_dict.items():
@@ -233,8 +238,8 @@ class RobotActionRoboMimicBase(RobotActionBase):
                 normalizer = arg.get("normalizer", None)
                 if normalizer is None:
                     continue
-                mean = normalizer["mean"].to(v)
-                std = normalizer["std"].to(v)
+                mean = torch.tensor(normalizer["mean"]).to(v)
+                std = torch.tensor(normalizer["std"]).to(v)
                 obs_dict[kk][k] = (obs_dict[kk][k]-mean)/std
                 
     def __call__(self, obs_dict):
@@ -261,7 +266,7 @@ class RobotActionMovetoBtn(RobotActionRoboMimicBase):
         with torch.no_grad():
             actions = self.policy(obs_dict)
         self.task_frame_add(actions, px_idx=0, py_idx=1, pr_idx=3)
-        actions = torch.cat([actions, torch.zeros((actions.shape[0], 6))], dim=1)
+        actions = torch.cat([actions, torch.zeros((actions.shape[0], 6)).to(actions)], dim=1)
         return actions
 
 class RobotActorServer:
@@ -274,7 +279,7 @@ class RobotActorServer:
         self.port = port
         self.race_data = Racedata()
         self.device = device
-        
+
         self.tcp_recipient = tcpRecipient("localhost", port, self.race_data)
         self.tcp_recipient.start()
         self.current_cmd = None
