@@ -87,24 +87,42 @@ class RobotClient:
     def get_server_value(self, name):
         return ServerValue(name, self)
 
-    def cmd_moveto(self, target_pos):
+    def cmd_base(self, task_frame_shift):
+        if task_frame_shift is None:
+            self._set_value("base_task_frame_shift", np.zeros((1,3)))
+        elif isinstance(task_frame_shift, np.ndarray): 
+            self._set_value("base_task_frame_shift", task_frame_shift)
+        else:
+            self._set_value_ref("base_task_frame_shift", task_frame_shift)
+
+    def cmd_moveto(self, target_pos, task_frame_shift=None):
         """Robot Action moveto
-           - Read: moveto_target_pos
+           - Read: 
+             - base_task_frame_shift
+             - moveto_target_pos
            - Write: None
         Args:
+            task_frame_shift: can be None, np.ndarray or ServerValue
             target_pos (_type_): numpy.ndarray([2,])
         """
-        self._set_value("moveto_target_pos", target_pos)
+        self.cmd_base(task_frame_shift)
+
+        if isinstance(target_pos, np.ndarray): 
+            self._set_value("moveto_target_pos", target_pos)
+        else:
+            self._set_value_ref("moveto_target_pos", target_pos)
+
         self._exec_command("moveto", 15)
 
-    def cmd_pushbtn(self, goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic):
+    def cmd_robomimicBase(self, goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift=None):
         """Robot Action pushbtn
            - Read: 
-             - pushbtn_goal_dof_pos, 
-             - pushbtn_goal_base_rgb, 
-             - pushbtn_goal_base_semantic
-             - pushbtn_goal_hand_rgb
-             - pushbtn_goal_hand_semantic
+             - base_task_frame_shift
+             - mimic_goal_dof_pos, 
+             - mimic_goal_base_rgb, 
+             - mimic_goal_base_semantic
+             - mimic_goal_hand_rgb
+             - mimic_goal_hand_semantic
            - Write: None
         Args:
             goal_dof (ServerValue)
@@ -113,13 +131,21 @@ class RobotClient:
             goal_hand_rgb (ServerValue)
             goal_hand_semantic (numpy.ndarray(uint8[ W,H,2]))
         """
-        self._set_value_ref("pushbtn_goal_dof_pos", goal_dof)
-        self._set_value_ref("pushbtn_goal_base_rgb", goal_base_rgb)
-        self._set_value("pushbtn_goal_base_semantic", goal_base_semantic)
-        self._set_value_ref("pushbtn_goal_hand_rgb", goal_hand_rgb)
-        self._set_value("pushbtn_goal_hand_semantic", goal_hand_semantic)
-        self._exec_command("pushbtn", 100)
+        self.cmd_base(task_frame_shift)
+        self._set_value_ref("mimic_goal_dof_pos", goal_dof)
+        self._set_value_ref("mimic_goal_base_rgb", goal_base_rgb)
+        self._set_value("mimic_goal_base_semantic", goal_base_semantic)
+        self._set_value_ref("mimic_goal_hand_rgb", goal_hand_rgb)
+        self._set_value("mimic_goal_hand_semantic", goal_hand_semantic)
 
+
+    def cmd_pushBtn(self, goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift=None):
+        self.cmd_robomimicBase(goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift)
+        self._exec_command("pushBtn", 100)
+
+    def cmd_movetoBtn(self, goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift=None):
+        self.cmd_robomimicBase(goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift)
+        self._exec_command("movetoBtn", 100)
 
 if __name__ == '__main__':
     client = RobotClient("localhost", 12345)
@@ -137,13 +163,15 @@ if __name__ == '__main__':
 
     print("get command 1", client._get_command())
 
-    goal_base_semantic = pushbtn_goal_base_semantic.get_value()
-    goal_hand_semantic = pushbtn_goal_hand_semantic.get_value()
-    client.cmd_pushbtn(pushbtn_goal_dof, 
+    goal_base_semantic = pushbtn_goal_base_semantic.get_value()[:,:,:,[1]]
+    goal_hand_semantic = pushbtn_goal_hand_semantic.get_value()[:,:,:,[1]]
+    client.cmd_movetoBtn(pushbtn_goal_dof, 
         pushbtn_goal_base_rgb, 
         goal_base_semantic, 
         pushbtn_goal_hand_rgb, 
-        goal_hand_semantic)
+        goal_hand_semantic,
+        task_frame_shift = pushbtn_goal_dof
+    )
 
     print("get command 2", client._get_command())
 

@@ -41,3 +41,35 @@ def modify_cfg_to_robomimic(cfg):
     }
     cfg.control.substract_action_from_obs_frame = True
     cfg.robot.rigid_props.disable_gravity = True # copied from ik related config
+
+def modify_cfg_to_simServer(cfg):
+    """
+    The environment configuration for sim_robot_server
+    Where we have raw obs and process obs in the tasks
+    """
+    modify_cfg_to_robomimic(cfg)
+
+    cfg.initialization.robot.position_cat = "see-point"
+    cfg.initialization.robot.position_uniform_min = [-3,  1, 0.4]
+    cfg.initialization.robot.position_uniform_max = [ 3,  6,   0.6]
+    cfg.initialization.robot.see_point_target = [0, -0.7]
+    cfg.initialization.robot.see_point_FOV = 0.8
+
+    cfg.control.control_type = "default"
+    cfg.terminations.collision = False
+    cfg.terminations.is_success = False
+    cfg.terminations.episode_timeout = False
+
+    cfg.observation_grouping.update({"debug":None})
+    del cfg.observation_grouping["goal"]
+
+    cfg.observations.low_dim.dof_pos_obsframe["normalizer"] = {
+        "mean": [0.0]*10,
+        "std":  [1.0]*10
+    }
+
+    cfg.observations.low_dim.ee_position_obsframe["normalizer"] = {
+        "mean": [0.0]*3,
+        "std":  [1.0]*3
+    }
+

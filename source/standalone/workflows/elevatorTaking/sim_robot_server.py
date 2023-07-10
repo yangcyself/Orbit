@@ -17,7 +17,8 @@ parser = argparse.ArgumentParser("Welcome to Orbit: Omniverse Robotics Environme
 parser.add_argument("--headless", action="store_true", default=False, help="Force display off at all times.")
 parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
-parser.add_argument("--checkpoint", type=str, default=None, help="Pytorch model checkpoint to load.")
+parser.add_argument("--moveto_ckpt", type=str, default=None, help="Pytorch model ckpt to load for the task 'moveto'")
+parser.add_argument("--pushbtn_ckpt", type=str, default=None, help="Pytorch model ckpt to load for the task 'pushbtn'")
 args_cli = parser.parse_args()
 args_cli.task = "Isaac-Elevator-Franka-v0"
 # launch the simulator
@@ -37,15 +38,17 @@ import robomimic.utils.torch_utils as TorchUtils
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
-from utils.mimic_utils import RobomimicWrapper
-from utils.env_presets import modify_cfg_to_robomimic, modify_cfg_to_task_push_btn
 
 import socket
 import time
 import threading
 import copy
+from utils.mimic_utils import RobomimicWrapper
+from utils.env_presets import modify_cfg_to_simServer
 from utils.tcp_utils import send_data, recv_data, Racedata, print_warning, print_error
 from utils.myTypes import myNumpyArray, myStr, myInt, myFloat
+from utils.task_configs import SimRobotServerCfg
+
 
 class tcpRecipient(threading.Thread):
     def __init__(self, host, port, race_data):
@@ -128,10 +131,15 @@ class tcpRecipient(threading.Thread):
 
 class RobotActionBase:
     """The base class for robot actions."""
-    def __init__(self, task_frame_shift=None):
-        if task_frame_shift is None:
-            task_frame_shift = torch.zeros(1,3) # default to no shift, x,y,yaw
-        self.task_frame_shift = task_frame_shift
+    def __init__(self, race_data, device):
+        self.race_data = race_data
+        task_frame_shift = race_data.getdata("base_task_frame_shift")
+        if task_frame_shift.ndim == 1: # add batch dim
+            task_frame_shift = task_frame_shift.reshape(1,-1)
+        if task_frame_shift.shape[1] == 10: # length of dof
+            task_frame_shift = task_frame_shift[:,[0,1,3]] # x,y,yaw
+        assert task_frame_shift.shape[1] == 3, "task_frame_shift should of shape 3"
+        self.task_frame_shift = torch.tensor(task_frame_shift).to(device)
     
     def __call__(self, obs_dict):
         """Get the action from the observation."""
@@ -172,10 +180,10 @@ class RobotActionBase:
 
 class RobotActionMoveto(RobotActionBase):
     """The action to move the robot to a target position."""
-    def __init__(self, target_pos, task_frame_shift=None):
-        super().__init__(task_frame_shift)
+    def __init__(self, race_data, device):
+        super().__init__(race_data, device)
+        target_pos = self.race_data.getdata("moveto_target_pos")
         self.target_pos = torch.tensor(target_pos)
-        print(self.target_pos)
     
     def __call__(self, obs_dict):
         """Move the robot to the target"""
@@ -184,24 +192,24 @@ class RobotActionMoveto(RobotActionBase):
         self.task_frame_add(res, px_idx=0, py_idx=1, pr_idx=3) 
         return res
 
-class RobotActionPushbtn(RobotActionBase):
+class RobotActionRoboMimicBase(RobotActionBase):
     """The action to push the button."""
-    def __init__(self, race_data, checkpoint, cfg, device, task_frame_shift=None):
-        super().__init__(task_frame_shift)
-        self.race_data = race_data
-        self.task_frame_shift = task_frame_shift
+    def __init__(self, race_data, cfg, device):
+        super().__init__(race_data, device)
         self.policy = RobomimicWrapper(
-            checkpoint = checkpoint, 
-            config_update = cfg, 
+            checkpoint = cfg.policy.checkpoint, 
+            config_update = cfg.policy.mimic_update, 
             device = device, 
             verbose = False
         )
+        self.cfg = cfg
         self.policy.start_episode()
-    
-    def __call__(self, obs_dict):
-        """Push the button."""
+        self.obscfg_dict = cfg.observations.to_dict()
+
+    def process_obs(obs_dict):
+        # Add goal observation
         goal_dict = {
-          k : torch.tensor(self.race_data.getdata(f"pushbtn_{k}"))
+          k : torch.tensor(self.race_data.getdata(f"mimic_{k}"))
           for k in [
             "goal_dof_pos", 
             "goal_base_rgb",
@@ -211,13 +219,49 @@ class RobotActionPushbtn(RobotActionBase):
           ]  
         }
         obs_dict.update({"goal": goal_dict})
+
+        # Task frame shift
         self.task_frame_substract(obs_dict["goal"]["goal_dof_pos"], px_idx=0, py_idx=1, pr_idx=3)
         self.task_frame_substract(obs_dict["low_dim"]["dof_pos_obsframe"], px_idx=0, py_idx=1, pr_idx=3)
         self.task_frame_substract(obs_dict["low_dim"]["dof_vel_obsframe"], vx_idx=0, vy_idx=1)
         self.task_frame_substract(obs_dict["low_dim"]["ee_position_obsframe"], px_idx=0, py_idx=1)
+
+        # Observation normalization
+        for kk,vv in obs_dict.items():
+            for k,v in vv.items():
+                arg = self.obscfg_dict.get(k, {})
+                normalizer = arg.get("normalizer", None)
+                if normalizer is None:
+                    continue
+                mean = normalizer["mean"].to(v)
+                std = normalizer["std"].to(v)
+                obs_dict[kk][k] = (obs_dict[kk][k]-mean)/std
+                
+    def __call__(self, obs_dict):
+        """Push the button."""
+
+        self.process_obs(obs_dict)
         with torch.no_grad():
             actions = self.policy(obs_dict)
         self.task_frame_add(actions, px_idx=0, py_idx=1, pr_idx=3)
+        return actions
+
+class RobotActionPushBtn(RobotActionRoboMimicBase):
+    def __init__(self, race_data, cfg, device):
+        super().__init__(race_data, cfg, device)
+    # every thing are the same as the base
+
+class RobotActionMovetoBtn(RobotActionRoboMimicBase):
+    def __init__(self, race_data, cfg, device):
+            super().__init__(race_data, cfg, device)
+
+    def __call__(self, obs_dict):
+        """Push the button."""
+        self.process_obs(obs_dict)
+        with torch.no_grad():
+            actions = self.policy(obs_dict)
+        self.task_frame_add(actions, px_idx=0, py_idx=1, pr_idx=3)
+        actions = torch.cat([actions, torch.zeros((actions.shape[0], 6))], dim=1)
         return actions
 
 class RobotActorServer:
@@ -238,13 +282,15 @@ class RobotActorServer:
 
     def actionFactory(self, action_type):
         if action_type == "moveto":
-            target_pos = self.race_data.getdata("moveto_target_pos")
             return RobotActionMoveto(target_pos)
-        elif action_type == "pushbtn":
-            checkpoint = self.policycfgs["pushbtn"]["checkpoint"]
-            cfg = self.policycfgs["pushbtn"]["cfg"]
+        elif action_type == "pushBtn":
+            cfg = self.policycfgs.pushBtn
             device = self.device
-            return RobotActionPushbtn(self.race_data, checkpoint, cfg, device)
+            return RobotActionPushBtn(self.race_data, cfg, device)
+        elif action_type == "movetoBtn":
+            cfg = self.policycfgs.movetoBtn
+            device = self.device
+            return RobotActionMovetoBtn(self.race_data, cfg, device)
         else:
             raise NotImplementedError
 
@@ -275,18 +321,11 @@ def main():
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=1)
 
-    modify_cfg_to_task_push_btn(env_cfg)
-    modify_cfg_to_robomimic(env_cfg)
-    env_cfg.terminations.episode_timeout = False
-    env_cfg.observation_grouping.update({"debug":None})
-    del env_cfg.observation_grouping["goal"]
-    action_cfgs = {
-        "moveto": {},
-        "pushbtn": {
-            "checkpoint": args_cli.checkpoint,
-            "cfg": {}
-        }
-    }
+    modify_cfg_to_simServer(env_cfg)
+
+    action_cfgs = SimRobotServerCfg()
+    action_cfgs.movetoBtn.policy.checkpoint = args_cli.moveto_ckpt
+    action_cfgs.pushBtn.policy.checkpoint = args_cli.pushbtn_ckpt
 
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg, headless=False)
