@@ -1119,7 +1119,7 @@ class ElevatorEnv(IsaacEnv):
                 cam_img.cat_vert(goal_img)
 
                 goal_seg_hand = RGBImage.from_torch(self.goal_dict["hand_semantic"].squeeze(0)[...,0]*255)
-                goal_seg_base = RGBImage.from_torch(self.goal_dict["hand_semantic"].squeeze(0)[...,0]*255)
+                goal_seg_base = RGBImage.from_torch(self.goal_dict["base_semantic"].squeeze(0)[...,0]*255)
                 cam_img.cat_vert(RGBImage.horizontal_concat([goal_seg_hand, goal_seg_base]))
 
             rgbimg.cat_horz(cam_img)
