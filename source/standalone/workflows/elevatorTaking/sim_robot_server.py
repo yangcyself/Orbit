@@ -128,29 +128,68 @@ class tcpRecipient(threading.Thread):
 
 class RobotActionBase:
     """The base class for robot actions."""
-    def __init__(self):
-        pass
+    def __init__(self, task_frame_shift=None):
+        if task_frame_shift is None:
+            task_frame_shift = torch.zeros(1,3) # default to no shift, x,y,yaw
+        self.task_frame_shift = task_frame_shift
     
     def __call__(self, obs_dict):
         """Get the action from the observation."""
         raise NotImplementedError
 
+    ##! Different from elevatorEnv, here we add the frame on to action and substruct from observation
+    def task_frame_add(self, input_vec, px_idx=None, py_idx=None, pr_idx=None, vx_idx=None, vy_idx=None):
+        """ Add the pose of the observation frame to the observation """
+        x,y,r = self.task_frame_shift[:, 0], self.task_frame_shift[:, 1], self.task_frame_shift[:, 2]
+        if(px_idx is not None and py_idx is not None):
+            ##! the clones are necessary to avoid in-place operations
+            px,py = input_vec[:, px_idx].clone(), input_vec[:, py_idx].clone()
+            input_vec[:, px_idx] = x + px * torch.cos(r) - py * torch.sin(r)
+            input_vec[:, py_idx] = y + px * torch.sin(r) + py * torch.cos(r)
+        if(pr_idx is not None):
+            input_vec[:, pr_idx] = r + input_vec[:, pr_idx]
+            input_vec[:, pr_idx] = torch.atan2(torch.sin(input_vec[:, pr_idx]), torch.cos(input_vec[:, pr_idx]))
+        if(vx_idx is not None and vy_idx is not None):
+            ##! the clones are necessary to avoid in-place operations
+            vx,vy = input_vec[:, vx_idx].clone(), input_vec[:, vy_idx].clone()
+            input_vec[:, vx_idx] = vx * torch.cos(r) - vy * torch.sin(r)
+            input_vec[:, vy_idx] = vx * torch.sin(r) + vy * torch.cos(r)
+
+    def task_frame_subtract(self, input_vec, px_idx=None, py_idx=None, pr_idx=None, vx_idx=None, vy_idx=None):
+        """Minus the pose of the observation frame to the observation """
+        x,y,r = self.task_frame_shift[:, 0], self.task_frame_shift[:, 1], self.task_frame_shift[:, 2]
+        if(px_idx is not None and py_idx is not None):
+            px,py = input_vec[:, px_idx].clone(), input_vec[:, py_idx].clone()
+            input_vec[:, px_idx] = (px - x) * torch.cos(r) + (py - y) * torch.sin(r)
+            input_vec[:, py_idx] = -(px - x) * torch.sin(r) + (py - y) * torch.cos(r)
+        if(pr_idx is not None):
+            input_vec[:, pr_idx] = input_vec[:, pr_idx] - r
+            input_vec[:, pr_idx] = torch.atan2(torch.sin(input_vec[:, pr_idx]), torch.cos(input_vec[:, pr_idx]))
+        if(vx_idx is not None and vy_idx is not None):
+            vx,vy = input_vec[:, vx_idx].clone(), input_vec[:, vy_idx].clone()
+            input_vec[:, vx_idx] = vx * torch.cos(r) + vy * torch.sin(r)
+            input_vec[:, vy_idx] = -vx * torch.sin(r) + vy * torch.cos(r)
+
 class RobotActionMoveto(RobotActionBase):
     """The action to move the robot to a target position."""
-    def __init__(self, target_pos):
+    def __init__(self, target_pos, task_frame_shift=None):
+        super().__init__(task_frame_shift)
         self.target_pos = torch.tensor(target_pos)
         print(self.target_pos)
     
     def __call__(self, obs_dict):
         """Move the robot to the target"""
         res = torch.zeros(1,10)
-        res[0,:2] = self.target_pos[:2]
+        res[:,:4] = self.target_pos[:, :4]
+        self.task_frame_add(res, px_idx=0, py_idx=1, pr_idx=3) 
         return res
 
 class RobotActionPushbtn(RobotActionBase):
     """The action to push the button."""
-    def __init__(self, race_data, checkpoint, cfg, device):
+    def __init__(self, race_data, checkpoint, cfg, device, task_frame_shift=None):
+        super().__init__(task_frame_shift)
         self.race_data = race_data
+        self.task_frame_shift = task_frame_shift
         self.policy = RobomimicWrapper(
             checkpoint = checkpoint, 
             config_update = cfg, 
@@ -172,7 +211,13 @@ class RobotActionPushbtn(RobotActionBase):
           ]  
         }
         obs_dict.update({"goal": goal_dict})
-        actions = self.policy(obs_dict)
+        self.task_frame_substract(obs_dict["goal"]["goal_dof_pos"], px_idx=0, py_idx=1, pr_idx=3)
+        self.task_frame_substract(obs_dict["low_dim"]["dof_pos_obsframe"], px_idx=0, py_idx=1, pr_idx=3)
+        self.task_frame_substract(obs_dict["low_dim"]["dof_vel_obsframe"], vx_idx=0, vy_idx=1)
+        self.task_frame_substract(obs_dict["low_dim"]["ee_position_obsframe"], px_idx=0, py_idx=1)
+        with torch.no_grad():
+            actions = self.policy(obs_dict)
+        self.task_frame_add(actions, px_idx=0, py_idx=1, pr_idx=3)
         return actions
 
 class RobotActorServer:
