@@ -4,7 +4,8 @@ def modify_cfg_to_task_push_btn(cfg):
     cfg.initialization.robot.position_cat = "uniform"
     cfg.initialization.robot.position_uniform_min = [-0.3, -0.1, 0.4, -1.8]
     cfg.initialization.robot.position_uniform_max = [ 0.3,  0.3, 0.6, -1.2]
-    cfg.terminations.is_success = "pushed_perfect"
+    cfg.terminations.is_success = True
+    cfg.terminations.task_condition = "pushed_perfect"
     cfg.terminations.extra_conditions = ["pushed_btn"]
     cfg.terminations.collision = True
     cfg.terminations.episode_timeout = True
@@ -18,7 +19,8 @@ def modify_cfg_to_task_move_to_btn(cfg):
     cfg.initialization.robot.see_point_target = [0, -0.7]
     cfg.initialization.robot.see_point_FOV = 0.8
 
-    cfg.terminations.is_success = "moveto_button"
+    cfg.terminations.is_success = False
+    cfg.terminations.task_condition = "moveto_button"
     cfg.terminations.collision = True
     cfg.terminations.episode_timeout = True
     cfg.robot.rigid_props.disable_gravity = True # copied from ik related config

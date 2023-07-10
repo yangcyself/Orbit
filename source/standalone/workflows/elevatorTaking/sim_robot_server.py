@@ -188,7 +188,8 @@ class RobotActionMoveto(RobotActionBase):
     
     def __call__(self, obs_dict):
         """Move the robot to the target"""
-        res = torch.zeros(1,10)
+        res = torch.zeros((1,10), device=self.device)
+        print("target_pos: ", self.target_pos)
         res[:,:4] = self.target_pos[:, :4]
         self.task_frame_add(res, px_idx=0, py_idx=1, pr_idx=3) 
         return res
@@ -286,15 +287,14 @@ class RobotActorServer:
         self.current_action: RobotActionBase = None
 
     def actionFactory(self, action_type):
+        device = self.device
         if action_type == "moveto":
-            return RobotActionMoveto(target_pos)
+            return RobotActionMoveto(self.race_data, device)
         elif action_type == "pushBtn":
             cfg = self.policycfgs.pushBtn
-            device = self.device
             return RobotActionPushBtn(self.race_data, cfg, device)
         elif action_type == "movetoBtn":
             cfg = self.policycfgs.movetoBtn
-            device = self.device
             return RobotActionMovetoBtn(self.race_data, cfg, device)
         else:
             raise NotImplementedError
@@ -314,6 +314,7 @@ class RobotActorServer:
             action = self.current_action(obs_dict)
             count = self.race_data.command_count_dec()
             if count <= 0:
+                print(f"{self.current_cmd} finished")
                 self.current_action = None
                 self.current_cmd = None
             return action

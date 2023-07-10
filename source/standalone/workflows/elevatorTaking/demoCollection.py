@@ -416,7 +416,7 @@ def main():
                     collector_interface.add(f"episode_info/{k}", v.reshape(success.shape))
             # flush data from collector for successful environments
             done_env_ids = dones.nonzero(as_tuple=False).squeeze(-1)
-            success_env_ids = success.nonzero(as_tuple=False).squeeze(-1)
+            success_env_ids = (success&dones).nonzero(as_tuple=False).squeeze(-1) 
             if (args_cli.debug):
                 for si in success_env_ids:
                     for i,debug_info in enumerate(collector_interface._dataset[f"env_{si}"]["obs"]["debug:debug_info"]):

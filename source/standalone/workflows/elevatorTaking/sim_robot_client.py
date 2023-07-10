@@ -145,23 +145,19 @@ class RobotClient:
 
     def cmd_movetoBtn(self, goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift=None):
         self.cmd_robomimicBase(goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift)
-        self._exec_command("movetoBtn", 100)
+        self._exec_command("movetoBtn", 90)
 
 if __name__ == '__main__':
     client = RobotClient("localhost", 12345)
     import time
     print("start")
+
+    # Move to the button panel
     pushbtn_goal_dof = client.get_server_value("obs/low_dim/dof_pos_obsframe")
     pushbtn_goal_base_rgb = client.get_server_value("obs/rgb/base_camera_rgb")
     pushbtn_goal_base_semantic = client.get_server_value("obs/semantic/base_camera_semantic")
     pushbtn_goal_hand_rgb = client.get_server_value("obs/rgb/hand_camera_rgb")
     pushbtn_goal_hand_semantic = client.get_server_value("obs/semantic/hand_camera_semantic")
-
-    print("get command 0", client._get_command())
-
-    client.cmd_moveto(np.array([0.2 , -0.1]))
-
-    print("get command 1", client._get_command())
 
     goal_base_semantic = pushbtn_goal_base_semantic.get_value()[:,:,:,[1]]
     goal_hand_semantic = pushbtn_goal_hand_semantic.get_value()[:,:,:,[1]]
@@ -173,7 +169,35 @@ if __name__ == '__main__':
         task_frame_shift = pushbtn_goal_dof
     )
 
-    print("get command 2", client._get_command())
+    while True:
+        cmd, count = client._get_command()
+        if count <= 0: # finished
+            break
+        time.sleep(0.1)
+    
+    # Stop there for 5 seconds
+    client.cmd_moveto(
+        np.array([[0., 0., 0.6, 0.0]]),
+        client.get_server_value("obs/low_dim/dof_pos_obsframe")
+    )
+    time.sleep(3)
+
+    # Push the button
+    pushbtn_goal_dof = client.get_server_value("obs/low_dim/dof_pos_obsframe")
+    pushbtn_goal_base_rgb = client.get_server_value("obs/rgb/base_camera_rgb")
+    pushbtn_goal_base_semantic = client.get_server_value("obs/semantic/base_camera_semantic")
+    pushbtn_goal_hand_rgb = client.get_server_value("obs/rgb/hand_camera_rgb")
+    pushbtn_goal_hand_semantic = client.get_server_value("obs/semantic/hand_camera_semantic")
+
+    goal_base_semantic = pushbtn_goal_base_semantic.get_value()
+    goal_hand_semantic = pushbtn_goal_hand_semantic.get_value()
+    client.cmd_pushBtn(pushbtn_goal_dof,
+        pushbtn_goal_base_rgb,
+        goal_base_semantic,
+        pushbtn_goal_hand_rgb,
+        goal_hand_semantic,
+        task_frame_shift = pushbtn_goal_dof
+    )
 
     import matplotlib.pyplot as plt
     plt.imshow(pushbtn_goal_base_rgb.get_value()[0])

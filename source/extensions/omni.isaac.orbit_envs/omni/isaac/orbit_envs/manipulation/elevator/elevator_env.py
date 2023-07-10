@@ -1024,10 +1024,9 @@ class ElevatorEnv(IsaacEnv):
                         "pushed_wrong": torch.where(self._hasdone_pushWrong, 1, 0),
                         "pushed_perfect": torch.where(self._hasdone_pushCorrect & (~self._hasdone_pushWrong), 1, 0),
                         }
-        if type(self.cfg.terminations.is_success) == str:
-            success_dict["task"] = success_dict[self.cfg.terminations.is_success]
-        else:
-            success_dict["task"] = success_dict["enter_elevator"]
+        
+        success_dict["task"] = success_dict.get(self.cfg.terminations.task_condition, False)
+        
         return success_dict
 
 

@@ -247,7 +247,8 @@ class TerminationsCfg:
         cfg.terminations
     """
     episode_timeout = True  # reset when episode length ended
-    is_success = "enter_elevator"  # reset when robot is in elevator
+    is_success = True  # reset when `task_condition` is satisfied
+    task_condition = "enter_elevator"  # the success condition of the task
     enter_elevator_threshold = 0.5  # distance to elevator center
     move_to_button_thresholds = [0.3, 0.05]  # distance to desired position and desired yaw
     collision = True  # reset when robot collides with the elevator
