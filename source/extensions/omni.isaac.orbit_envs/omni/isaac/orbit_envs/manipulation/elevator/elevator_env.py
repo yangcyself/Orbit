@@ -593,7 +593,7 @@ class ElevatorEnv(IsaacEnv):
         self._randomize_buttonPanel(env_ids=env_ids)
         
         # --desire position
-        self.enter_elevator_des_pos[env_ids, 0:3] = torch.tensor([[1.53, -2.08, -1.61]], device = self.device)
+        self.enter_elevator_des_pos[env_ids, 0:3] = torch.tensor([[1.53, -2.08, -math.pi/2]], device = self.device)
         self.moveto_button_des_pos[env_ids, 0:2] =  torch.tensor([self.cfg.buttonPanel.translation[:2]], device = self.device)
         self.moveto_button_des_pos[env_ids, 1] += 0.75
         self.moveto_button_des_pos[env_ids, 2] = -math.pi/2
@@ -1210,6 +1210,33 @@ class ElevatorObservationManager(ObservationManager):
     def ee_position(self, env: ElevatorEnv):
         """Current end-effector position of the arm."""
         return env.robot.data.ee_state_w[:, :3]
+
+    def keypoint_outbtn_obsframe(self, env: ElevatorEnv):
+        """
+        Key points in the observation frame. 
+        Which face the outside button panel. x,y,yaw
+        """
+        
+        outbtn = env.moveto_button_des_pos.clone()
+        env.obs_pose_add(outbtn, px_idx=0, py_idx=1, pr_idx=2)
+        return outbtn
+
+    def keypoint_outdoor_obsframe(self, env: ElevatorEnv):
+        """
+        face the elevator door. x,y,yaw
+        """
+        outdoor = torch.tensor([1.5, 0.0, -math.pi/2]).tile((env.num_envs, 1))
+        env.obs_pose_add(outdoor, px_idx=0, py_idx=1, pr_idx=2)
+        return outdoor
+
+    def keypoint_inbtn_obsframe(self, env: ElevatorEnv):
+        """
+        face the inside button panel. x,y,yaw
+        """
+        inbtn = env.enter_elevator_des_pos.clone()
+        inbtn[:, 2] = -math.pi
+        env.obs_pose_add(inbtn, px_idx=0, py_idx=1, pr_idx=2)
+        return inbtn
 
     def dof_pos_obsframe(self, env: ElevatorEnv, normalizer:dict):
         """DOF positions for the arm in observation frame."""

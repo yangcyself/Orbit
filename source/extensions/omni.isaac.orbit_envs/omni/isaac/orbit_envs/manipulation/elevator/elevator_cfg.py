@@ -158,11 +158,15 @@ class ObservationsCfg:
         dof_pos_normalized = {"scale": 1.0}
         dof_vel = {"scale": 0.5}
         ee_position = {}
-        # actions = {}
+        # elevator
         elevator_state = {}
         elevator_waittime = {}
         elevator_is_zerofloor = {}
         elevator_btn_pressed = {}
+        # keypoints
+        keypoint_outbtn_obsframe = {}
+        keypoint_outdoor_obsframe = {}
+        keypoint_inbtn_obsframe = {}
 
     @configclass
     class RGBCfg:

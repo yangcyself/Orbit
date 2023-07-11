@@ -95,7 +95,7 @@ class RobotClient:
         else:
             self._set_value_ref("base_task_frame_shift", task_frame_shift)
 
-    def cmd_moveto(self, target_pos, task_frame_shift=None):
+    def cmd_moveto(self, target_pos, task_frame_shift=None, count=15):
         """Robot Action moveto
            - Read: 
              - base_task_frame_shift
@@ -112,7 +112,7 @@ class RobotClient:
         else:
             self._set_value_ref("moveto_target_pos", target_pos)
 
-        self._exec_command("moveto", 15)
+        self._exec_command("moveto", count)
 
     def cmd_robomimicBase(self, goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift=None):
         """Robot Action pushbtn
@@ -139,13 +139,19 @@ class RobotClient:
         self._set_value("mimic_goal_hand_semantic", goal_hand_semantic)
 
 
-    def cmd_pushBtn(self, goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift=None):
+    def cmd_pushBtn(self, goal_dof, goal_base_rgb, 
+            goal_base_semantic, goal_hand_rgb, 
+            goal_hand_semantic, task_frame_shift=None,
+            count=100):
         self.cmd_robomimicBase(goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift)
-        self._exec_command("pushBtn", 100)
+        self._exec_command("pushBtn", count)
 
-    def cmd_movetoBtn(self, goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift=None):
+    def cmd_movetoBtn(self, goal_dof, goal_base_rgb, 
+            goal_base_semantic, goal_hand_rgb, 
+            goal_hand_semantic, task_frame_shift=None,
+            count=200):
         self.cmd_robomimicBase(goal_dof, goal_base_rgb, goal_base_semantic, goal_hand_rgb, goal_hand_semantic, task_frame_shift)
-        self._exec_command("movetoBtn", 90)
+        self._exec_command("movetoBtn", count)
 
 if __name__ == '__main__':
     client = RobotClient("localhost", 12345)
@@ -153,58 +159,86 @@ if __name__ == '__main__':
     print("start")
 
     # Move to the button panel
-    pushbtn_goal_dof = client.get_server_value("obs/low_dim/dof_pos_obsframe")
-    pushbtn_goal_base_rgb = client.get_server_value("obs/rgb/base_camera_rgb")
-    pushbtn_goal_base_semantic = client.get_server_value("obs/semantic/base_camera_semantic")
-    pushbtn_goal_hand_rgb = client.get_server_value("obs/rgb/hand_camera_rgb")
-    pushbtn_goal_hand_semantic = client.get_server_value("obs/semantic/hand_camera_semantic")
+    goal_dof = client.get_server_value("obs/low_dim/dof_pos_obsframe")
+    goal_base_rgb = client.get_server_value("obs/rgb/base_camera_rgb")
+    goal_base_semantic = client.get_server_value("obs/semantic/base_camera_semantic")
+    goal_hand_rgb = client.get_server_value("obs/rgb/hand_camera_rgb")
+    goal_hand_semantic = client.get_server_value("obs/semantic/hand_camera_semantic")
 
-    goal_base_semantic = pushbtn_goal_base_semantic.get_value()[:,:,:,[1]]
-    goal_hand_semantic = pushbtn_goal_hand_semantic.get_value()[:,:,:,[1]]
-    client.cmd_movetoBtn(pushbtn_goal_dof, 
-        pushbtn_goal_base_rgb, 
+    print("move_to_btn")
+    goal_base_semantic = goal_base_semantic.get_value()[:,:,:,[1]]
+    goal_hand_semantic = goal_hand_semantic.get_value()[:,:,:,[1]]
+    client.cmd_movetoBtn(goal_dof, 
+        goal_base_rgb, 
         goal_base_semantic, 
-        pushbtn_goal_hand_rgb, 
+        goal_hand_rgb, 
         goal_hand_semantic,
-        task_frame_shift = pushbtn_goal_dof
+        task_frame_shift = goal_dof
     )
 
+    print("wait task finish")
     while True:
         cmd, count = client._get_command()
         if count <= 0: # finished
             break
         time.sleep(0.1)
     
-    # Stop there for 5 seconds
-    client.cmd_moveto(
-        np.array([[0., 0., 0.6, 0.0]]),
-        client.get_server_value("obs/low_dim/dof_pos_obsframe")
-    )
-    time.sleep(3)
+    # # Stop there for 3 seconds
+    # client.cmd_moveto(
+    #     np.array([[0., 0., 0.6, 0.0]]),
+    #     client.get_server_value("obs/low_dim/dof_pos_obsframe")
+    # )
+    # time.sleep(3)
 
     # Push the button
-    pushbtn_goal_dof = client.get_server_value("obs/low_dim/dof_pos_obsframe")
-    pushbtn_goal_base_rgb = client.get_server_value("obs/rgb/base_camera_rgb")
-    pushbtn_goal_base_semantic = client.get_server_value("obs/semantic/base_camera_semantic")
-    pushbtn_goal_hand_rgb = client.get_server_value("obs/rgb/hand_camera_rgb")
-    pushbtn_goal_hand_semantic = client.get_server_value("obs/semantic/hand_camera_semantic")
+    print("push_btn")
+    goal_dof = client.get_server_value("obs/low_dim/dof_pos_obsframe")
+    goal_base_rgb = client.get_server_value("obs/rgb/base_camera_rgb")
+    goal_base_semantic = client.get_server_value("obs/semantic/base_camera_semantic")
+    goal_hand_rgb = client.get_server_value("obs/rgb/hand_camera_rgb")
+    goal_hand_semantic = client.get_server_value("obs/semantic/hand_camera_semantic")
 
-    goal_base_semantic = pushbtn_goal_base_semantic.get_value()
-    goal_hand_semantic = pushbtn_goal_hand_semantic.get_value()
-    client.cmd_pushBtn(pushbtn_goal_dof,
-        pushbtn_goal_base_rgb,
+    goal_base_semantic = goal_base_semantic.get_value()
+    goal_hand_semantic = goal_hand_semantic.get_value()
+    client.cmd_pushBtn(goal_dof,
+        goal_base_rgb,
         goal_base_semantic,
-        pushbtn_goal_hand_rgb,
+        goal_hand_rgb,
         goal_hand_semantic,
-        task_frame_shift = pushbtn_goal_dof
+        task_frame_shift = goal_dof
     )
 
+    print("wait task finish")
+    while True:
+        cmd, count = client._get_command()
+        if count <= 0: # finished
+            break
+        time.sleep(0.1)
+
+    print("move to door")
+    # move to the door
+    client.cmd_moveto(
+        np.array([[0., 0., 0.6, 0.0]]),
+        client.get_server_value("obs/policy/keypoint_outdoor_obsframe"),
+        count = 150
+    )
+    time.sleep(16)
+
+    print("move inside")
+    # move inside 
+    client.cmd_moveto(
+        np.array([[0., 0., 0.6, 0.0]]),
+        client.get_server_value("obs/policy/keypoint_inbtn_obsframe"),
+        count = 100
+    )
+    time.sleep(11)
+
     import matplotlib.pyplot as plt
-    plt.imshow(pushbtn_goal_base_rgb.get_value()[0])
+    plt.imshow(goal_base_rgb.get_value()[0])
     plt.figure()
     plt.imshow(goal_base_semantic[0,:,:,0])
     plt.figure()
-    plt.imshow(pushbtn_goal_hand_rgb.get_value()[0])
+    plt.imshow(goal_hand_rgb.get_value()[0])
     plt.figure()
     plt.imshow(goal_hand_semantic[0,:,:,0])
     plt.show()

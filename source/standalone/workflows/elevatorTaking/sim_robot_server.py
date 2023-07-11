@@ -189,7 +189,6 @@ class RobotActionMoveto(RobotActionBase):
     def __call__(self, obs_dict):
         """Move the robot to the target"""
         res = torch.zeros((1,10), device=self.device)
-        print("target_pos: ", self.target_pos)
         res[:,:4] = self.target_pos[:, :4]
         self.task_frame_add(res, px_idx=0, py_idx=1, pr_idx=3) 
         return res
