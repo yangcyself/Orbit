@@ -16,11 +16,11 @@ from omni.isaac.kit import SimulationApp
 parser = argparse.ArgumentParser("Welcome to Orbit: Omniverse Robotics Environments!")
 parser.add_argument("--headless", action="store_true", default=False, help="Force display off at all times.")
 parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
-parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--checkpoints", type=str, default=None, help="the pytorch checkpoints to load. Use __e__ as a placeholder for epoch number.")
 parser.add_argument("--resume", type=str, default=None, help="resume a previous rollout. Provide the path to the `rollout_log.txt`.")
+parser.add_argument("--task", type=str, default="pushbtn", help="Name of the task: can be pushbtn or movetobtn")
+
 args_cli = parser.parse_args()
-args_cli.task = "Isaac-Elevator-Franka-v0"
 # launch the simulator
 config = {"headless": args_cli.headless}
 simulation_app = SimulationApp(config)
@@ -53,7 +53,9 @@ import sys
 
 sys.path.append(os.path.dirname(__file__))
 from utils.mimic_utils import RobomimicWrapper, myEnvGym
-from utils.env_presets import modify_cfg_to_robomimic, modify_cfg_to_task_push_btn
+from utils.env_presets import (modify_cfg_to_robomimic, 
+        modify_cfg_to_task_push_btn, 
+        modify_cfg_to_task_move_to_btn)
 
 # Define a function to parse a single line of the log file
 def parse_log_line(line):
@@ -99,11 +101,16 @@ def compare_dicts(dict1, dict2, path=""):
 def main():
     """Run a trained policy from robomimic with Isaac Orbit environment."""
     # parse configuration
-    env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=1)
+    env_cfg = parse_env_cfg("Isaac-Elevator-Franka-v0", use_gpu=not args_cli.cpu, num_envs=1)
     # modify configuration
     modify_cfg_to_robomimic(env_cfg)
-    modify_cfg_to_task_push_btn(env_cfg)
-    env_cfg.env.episode_length_s = 10.
+    if args_cli.task.lower() == "pushbtn":
+        modify_cfg_to_task_push_btn(env_cfg)
+    elif args_cli.task.lower() == "movetobtn":
+        modify_cfg_to_task_move_to_btn(env_cfg)
+    else:
+        raise NotImplementedError(f"Task {args_cli.task} not implemented.")
+    env_cfg.env.episode_length_s = 15.
 
     policy_config_update = dict(
         algo=dict(
@@ -144,7 +151,7 @@ def main():
             logf.write(f"{args_cli.checkpoints}\n")
 
     # create environment
-    env = myEnvGym(args_cli.task, cfg= env_cfg, headless= False)
+    env = myEnvGym(f"Isaac-Elevator-Franka-v0", cfg= env_cfg, headless= False)
 
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
