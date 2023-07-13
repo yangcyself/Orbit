@@ -28,17 +28,18 @@ def create_dataset_stack(source_files, target_file):
                     data_group.attrs["env_args"] = f_source["data"].attrs["env_args"]
                 
                 data_group.attrs["total"] += f_source["data"].attrs["total"]
-                for demo_source in f_source["data"].keys():
+                for demo_id in f_source["data"].keys():
                     demo_target = data_group.create_group(f"demo_{demo_count}")
+                    demo_source = f_source["data"][demo_id]
                     copy_structure(demo_source, demo_target)
                     demo_count += 1
 
 
 def create_dataset_dir(sources, target_dir):
+    os.makedirs(target_dir , exist_ok=True)
     for source in sources:
-        t_dir = os.path.join(target_dir, os.path.basename(source))
-        os.makedirs(t_dir , exist_ok=True)
-        shutil.copytree(os.path.join(source, "params"), os.path.join(t_dir, "params"))
+        basename = os.path.basename(source)
+        shutil.copytree(os.path.join(source, "params"), os.path.join(target_dir, basename+"_params"))
     with open(os.path.join(target_dir, "sources.txt"), "w") as f:
         f.write("\n".join(sources))
 
