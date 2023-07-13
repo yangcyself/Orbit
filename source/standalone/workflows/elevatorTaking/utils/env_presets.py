@@ -1,4 +1,12 @@
 
+def modify_cfg_according_to_task(cfg, task):
+    if task.lower() == "pushbtn":
+        modify_cfg_to_task_push_btn(cfg)
+    elif task.lower() == "movetobtn":
+        modify_cfg_to_task_move_to_btn(cfg)
+    else:
+        raise NotImplementedError(f"Task {task} not implemented.")
+
 
 def modify_cfg_to_task_push_btn(cfg):
     cfg.initialization.robot.position_cat = "uniform"
@@ -11,6 +19,7 @@ def modify_cfg_to_task_push_btn(cfg):
     cfg.terminations.episode_timeout = True
     cfg.robot.rigid_props.disable_gravity = True # copied from ik related config
     cfg.control.control_type = "default"
+    cfg.control.command_type = "all_pos"
 
 def modify_cfg_to_task_move_to_btn(cfg):
     cfg.initialization.robot.position_cat = "see-point"
@@ -25,6 +34,7 @@ def modify_cfg_to_task_move_to_btn(cfg):
     cfg.terminations.episode_timeout = True
     cfg.robot.rigid_props.disable_gravity = True # copied from ik related config
     cfg.control.control_type = "base"
+    cfg.control.command_type = "xy_vel"
     cfg.observations.semantic.hand_camera_semantic = {
         "class_names":[("button_panel","button", "button_target")]
     }

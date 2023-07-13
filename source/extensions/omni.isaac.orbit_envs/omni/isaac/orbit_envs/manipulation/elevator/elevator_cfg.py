@@ -254,7 +254,7 @@ class TerminationsCfg:
     is_success = True  # reset when `task_condition` is satisfied
     task_condition = "enter_elevator"  # the success condition of the task
     enter_elevator_threshold = 0.5  # distance to elevator center
-    move_to_button_thresholds = [0.3, 0.05]  # distance to desired position and desired yaw
+    move_to_button_thresholds = [0.15, 0.05]  # distance to desired position and desired yaw
     collision = True  # reset when robot collides with the elevator
     extra_conditions = []
     hasdone_pushbtn_threshold = 8 # how long the button have to be hold
@@ -270,6 +270,12 @@ class ControlCfg:
     substract_action_from_obs_frame = True
     # decimation: Number of control action updates @ sim dt per policy dt
     decimation = 2
+    # command types:
+    #  "all_pos": all joins are p_abs control
+    #  "xy_vel": only the base_xy is v_abs control, the rest are p_abs control
+    command_type = "xy_vel"
+    # command_type = "all_pos"
+
 
     # configuration loaded when control_type == "inverse_kinematics"
     inverse_kinematics: DifferentialInverseKinematicsCfg = DifferentialInverseKinematicsCfg(

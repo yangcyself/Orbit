@@ -43,6 +43,12 @@ from .elevator_cfg import ElevatorEnvCfg
 # import omni.isaac.orbit_envs  # noqa: F401
 # from omni.isaac.orbit_envs.utils.parse_cfg import parse_env_cfg
 
+## util functions
+def _rotate2d(x, y, r):
+    x_rot = x * torch.cos(r) - y * torch.sin(r)
+    y_rot = x * torch.sin(r) + y * torch.cos(r)
+    return x_rot, y_rot
+
 # initialize warp
 wp.init()
 
@@ -698,8 +704,10 @@ class ElevatorEnv(IsaacEnv):
             base_y = self.robot.data.base_dof_pos[:, 1] # x, y, z, yaw
             base_z = self.robot.data.base_dof_pos[:, 2] # x, y, z, yaw
             base_r = self.robot.data.base_dof_pos[:, 3] # x, y, z, yaw
-            cmd_x = self.actions[:, 0] * torch.cos(base_r) - self.actions[:, 1] * torch.sin(base_r) + base_x
-            cmd_y = self.actions[:, 0] * torch.sin(base_r) + self.actions[:, 1] * torch.cos(base_r) + base_y
+            cmd_x, cmd_y = _rotate2d(self.actions[:, 0], self.actions[:, 1], base_r)
+            if self.cfg.control.command_type == "all_pos":
+                cmd_x += base_x
+                cmd_y += base_y
             cmd_z = self.actions[:, 2] + base_z
             cmd_r = self.actions[:, 5] + base_r
             self.robot_actions[:, : self.robot.base_num_dof] = torch.cat(
@@ -707,13 +715,27 @@ class ElevatorEnv(IsaacEnv):
             )
         elif self.cfg.control.control_type == "default":
             actions = self.actions.clone()
-            if self.cfg.control.substract_action_from_obs_frame:
-                self.obs_pose_subtract(actions, px_idx=0, py_idx=1, pr_idx=3)
+            if self.cfg.control.command_type == "xy_vel":
+                cmd_x, cmd_y = _rotate2d(actions[:, 0], actions[:, 1], self.robot.data.base_dof_pos[:, 3])
+                actions[:, 0] = cmd_x
+                actions[:, 1] = cmd_y
+                if self.cfg.control.substract_action_from_obs_frame:
+                    self.obs_pose_subtract(actions, pr_idx=3)
+            elif self.cfg.control.command_type == "all_pos":
+                if self.cfg.control.substract_action_from_obs_frame:
+                    self.obs_pose_subtract(actions, px_idx=0, py_idx=1, pr_idx=3)
             self.robot_actions[:, :] = actions
         elif self.cfg.control.control_type == "base":
             actions = self.actions.clone()
-            if self.cfg.control.substract_action_from_obs_frame:
-                self.obs_pose_subtract(actions, px_idx=0, py_idx=1, pr_idx=3)
+            if self.cfg.control.command_type == "xy_vel":
+                cmd_x, cmd_y = _rotate2d(actions[:, 0], actions[:, 1], self.robot.data.base_dof_pos[:, 3])
+                actions[:, 0] = cmd_x
+                actions[:, 1] = cmd_y
+                if self.cfg.control.substract_action_from_obs_frame:
+                    self.obs_pose_subtract(actions, pr_idx=3)
+            elif self.cfg.control.command_type == "all_pos":
+                if self.cfg.control.substract_action_from_obs_frame:
+                    self.obs_pose_subtract(actions, px_idx=0, py_idx=1, pr_idx=3)
             self.robot_actions[:, :4] = actions
             self.robot_actions[:, 4:] = 0.
         # perform physics stepping
@@ -851,6 +873,12 @@ class ElevatorEnv(IsaacEnv):
             self.cfg.control.inverse_kinematics.rotation_offset = self.cfg.robot.ee_info.rot_offset
         else:
             print("Using default joint controller...")
+        if self.cfg.control.command_type == "all_pos":
+            print("Using all position commands...")
+        elif self.cfg.control.command_type == "xy_vel":
+            print("Using xy velocity commands...")
+            self.cfg.robot.actuator_groups["base_xy"].control_cfg.command_types = ["v_abs"]
+            self.cfg.robot.actuator_groups["base_xy"].control_cfg.damping = {".*": 1e5}
 
         # Only Keep the observations that are used in observation grouping
         modalities = []
@@ -1078,11 +1106,16 @@ class ElevatorEnv(IsaacEnv):
             if self.cfg.control.substract_action_from_obs_frame:
                 self.obs_pose_add(actions, px_idx=0, py_idx=1, pr_idx=3)
             actions -= self.robot.data.actuator_pos_offset
+            if self.cfg.control.command_type == "xy_vel":
+                actions[:, :2] = 0
             return actions
         elif self.cfg.control.control_type == "base":
             actions = dof_pos[:, :4]
             if self.cfg.control.substract_action_from_obs_frame:
                 self.obs_pose_add(actions, px_idx=0, py_idx=1, pr_idx=3)
+            actions -= self.robot.data.actuator_pos_offset
+            if self.cfg.control.command_type == "xy_vel":
+                actions[:, :2] = 0
             return actions
 
 

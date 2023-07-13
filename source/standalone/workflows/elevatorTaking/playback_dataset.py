@@ -266,7 +266,7 @@ def playback_trajectory_with_env(
                         if err > 1e-4:
                             print("warning: obs {} diverged by {} at step {}".format(k, err, i))
 
-                image_names = [k for k in obs_dict.keys() if (("semantic" in k) or ("rgb" in k))]
+                image_names = [k for k in obs_dict.keys() if ((("semantic" in k) or ("rgb" in k)) and ("goal" not in k) )]
                 if(camera_names is not None): # compare the image from the simulator with the image in the dataset
                     if video_count % video_skip == 0:
                         # concatenate image obs together
@@ -377,6 +377,7 @@ def get_iterator_from_dataloader(args):
     config.train.seq_length = 100 # Forward the first 100 step
     config.train.seq_length_obs = None 
     config.train.seq_length_data = None 
+    config.train.pad_seq_length_beginning = False
     ObsUtils.initialize_obs_utils_with_config(config)
 
     shape_meta = FileUtils.get_shape_metadata_from_dataset(

@@ -23,10 +23,10 @@ parser.add_argument("--filename", type=str, default="hdf_dataset", help="Basenam
 parser.add_argument("--sensitivity", type=float, default=1.0, help="Sensitivity factor.")
 parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
 parser.add_argument("--prefix", type=str, default=".", help="Save dataset to <prefix>/logs/rolloutCollection.")
+parser.add_argument("--task", type=str, default="pushbtn", help="Name of the task: can be pushbtn or movetobtn")
 parser.add_argument("--notCollectDemonstration", action="store_true", default=False, help="Do not collect demonstration.")
 parser.add_argument("--debug", action="store_true", default=False, help="Whether or not use debug states and observation.")
 args_cli = parser.parse_args()
-args_cli.task = "Isaac-Elevator-Franka-v0"
 # launch the simulator
 config = {"headless": args_cli.headless}
 simulation_app = SimulationApp(config)
@@ -64,7 +64,7 @@ from omni.isaac.orbit.controllers.differential_inverse_kinematics import (
 from omni.isaac.orbit.utils.math import quat_mul
 
 sys.path.append(os.path.dirname(__file__))
-from utils.env_presets import modify_cfg_to_task_push_btn, modify_cfg_to_task_move_to_btn, modify_cfg_to_robomimic
+from utils.env_presets import modify_cfg_according_to_task, modify_cfg_to_robomimic
 
 # Default arguments for actor wrappers
 ACTOR_CONFIGS = {
@@ -225,6 +225,23 @@ class IK_Actor(ActorWrapperBase):
                 "/Visuals/ik_command", self.env.num_envs, usd_path=self.env.cfg.marker.usd_path, scale=self.env.cfg.marker.scale
             )
 
+    def postprocess_action(self, action):
+        if self.env.cfg.control.control_type == "default":
+            pass
+        elif self.env.cfg.control.control_type == "base":
+            action =  action[:,:4]
+        
+        if self.env.cfg.control.command_type == "xy_vel":
+            current_dof = self.robot.data.dof_pos
+            base_r = current_dof[:, 3]
+            dxy = action[:, :2] - current_dof[:, :2]
+            cmd_vxy = 3.0*(dxy)/(0.3 + torch.norm(dxy, dim=1, keepdim=True))
+            cmd_x = cmd_vxy[:, 0] * torch.cos(base_r) + cmd_vxy[:, 1] * torch.sin(base_r)
+            cmd_y = -cmd_vxy[:, 0] * torch.sin(base_r) + cmd_vxy[:, 1] * torch.cos(base_r)
+            action[:, 0] = cmd_x
+            action[:, 1] = cmd_y
+        return action
+
     def get_action(self, obs):
         current_dof = self.robot.data.dof_pos
         ik_cmd = torch.zeros([self.env.num_envs, 7])
@@ -257,10 +274,7 @@ class IK_Actor(ActorWrapperBase):
         alpha = self.actor_cfg["base_target_alpha"]
         base_actions = (1-alpha) * current_dof[:,:4] + alpha * self.target_base_pose
         robot_actions = torch.cat([base_actions, arm_actions],axis = 1)
-        if self.env.cfg.control.control_type == "default":
-            return robot_actions
-        elif self.env.cfg.control.control_type == "base":
-            return robot_actions[:,:4]
+        return self.postprocess_action(robot_actions)
 
     def reset_idx(self, env_ids = None):
         """Assume this function is called after env.reset()
@@ -286,11 +300,10 @@ class IK_Actor(ActorWrapperBase):
 def main():
     """Collect demonstrations from the environment using teleop interfaces."""
     # parse configuration
-    env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
+    env_cfg = parse_env_cfg("Isaac-Elevator-Franka-v0", use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
     # modify configuration
     modify_cfg_to_robomimic(env_cfg)
-    # modify_cfg_to_task_push_btn(env_cfg)
-    modify_cfg_to_task_move_to_btn(env_cfg)
+    modify_cfg_according_to_task(env_cfg, args_cli.task)
     env_cfg.env.episode_length_s = 5.
     env_cfg.observations.return_dict_obs_in_group = True
     # temp config only for RSLRL collection
@@ -298,6 +311,9 @@ def main():
     if args_cli.debug:
         env_cfg.observations.low_dim.enable_corruption = False
         env_cfg.observation_grouping.update({"debug":None})
+
+    if args_cli.task.lower() == "movetobtn":
+        ACTOR_CONFIGS["ik"]["actor_cfg"]["base_target_end_std"] = (0.001, 0.001, 0.001, 0.001)
 
     EXP_CONFIGS["wrapper_cfg"] = ACTOR_CONFIGS[EXP_CONFIGS["actor_type"]]
     if(EXP_CONFIGS["actor_type"] == "human"):    
@@ -317,20 +333,20 @@ def main():
         raise ValueError(f"Invalid actor type '{EXP_CONFIGS['actor_type']}'. Supported: 'human', 'rslrl'.")
 
     # create environment
-    env = gym.make(args_cli.task, cfg=env_cfg, headless=False) # must headless=False for camera image
+    env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False) # must headless=False for camera image
 
     if(EXP_CONFIGS["actor_type"] == "human"):
         # create actor
         actor = HumanActor(env, device=args_cli.device, sensitivity=args_cli.sensitivity)
     elif(EXP_CONFIGS["actor_type"] == "rslrl"):
         # create actor
-        actor = RslRlActor(env, args_cli.task, args_cli.checkpoint)
+        actor = RslRlActor(env, "Isaac-Elevator-Franka-v0", args_cli.checkpoint)
     elif(EXP_CONFIGS["actor_type"] == "ik"):
         actor = IK_Actor(env, EXP_CONFIGS["wrapper_cfg"]["ik_cfg"], EXP_CONFIGS["wrapper_cfg"]["actor_cfg"])
     
     # specify directory for logging experiments
     log_dir = datetime.now().strftime("%b%d_%H-%M-%S")
-    log_dir = os.path.join(args_cli.prefix, "logs/rolloutCollection", args_cli.task, log_dir)
+    log_dir = os.path.join(args_cli.prefix, "logs/rolloutCollection", f"Elevator-{args_cli.task}", log_dir)
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_pickle(os.path.join(log_dir, "params", "env.pkl"), env_cfg)
@@ -339,7 +355,7 @@ def main():
 
     # create data-collector
     collector_interface = RobomimicDataCollector(
-        env_name=args_cli.task,
+        env_name="Isaac-Elevator-Franka-v0",
         directory_path=log_dir,
         filename=args_cli.filename,
         num_demos=args_cli.num_demos,
@@ -384,7 +400,10 @@ def main():
 
             # -- actions
             actions_to_collect = actions.clone()
-            env.obs_pose_add(actions_to_collect, px_idx=0, py_idx=1, pr_idx=3)
+            if(env_cfg.control.command_type=="all_pos"):
+                env.obs_pose_add(actions_to_collect, px_idx=0, py_idx=1, pr_idx=3)
+            elif(env_cfg.control.command_type=="xy_vel"):
+                env.obs_pose_add(actions_to_collect, pr_idx=3)
             collector_interface.add("actions", actions_to_collect)
             # perform action on environment
             obs, rewards, dones, info = env.step(actions)

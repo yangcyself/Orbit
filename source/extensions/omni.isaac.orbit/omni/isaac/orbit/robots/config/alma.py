@@ -94,8 +94,13 @@ ALMA_CFG = MobileManipulatorCfg(
     ),
     actuator_groups={
         # base
-        "base": ActuatorGroupCfg(
-            dof_names=["world_body.*"],
+        "base_xy": ActuatorGroupCfg(
+            dof_names=["world_body_p_x", "world_body_p_y"],
+            model_cfg=ImplicitActuatorCfg(velocity_limit=100, torque_limit=50),
+            control_cfg=ActuatorControlCfg(command_types=["p_abs"], stiffness={".*": 5e4}, damping={".*": 1e4}),
+        ),
+        "base_zr": ActuatorGroupCfg(
+            dof_names=["world_body_p_z", "world_body_r_z"],
             model_cfg=ImplicitActuatorCfg(velocity_limit=100, torque_limit=50),
             control_cfg=ActuatorControlCfg(command_types=["p_abs"], stiffness={".*": 5e4}, damping={".*": 1e4}),
         ),
