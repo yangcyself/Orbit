@@ -16,10 +16,9 @@ from omni.isaac.kit import SimulationApp
 parser = argparse.ArgumentParser("Welcome to Orbit: Omniverse Robotics Environments!")
 parser.add_argument("--headless", action="store_true", default=False, help="Force display off at all times.")
 parser.add_argument("--cpu", action="store_true", default=False, help="Use CPU pipeline.")
-parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+parser.add_argument("--task", type=str, default="pushbtn", help="Name of the task: can be pushbtn or movetobtn")
 parser.add_argument("--checkpoint", type=str, default=None, help="Pytorch model checkpoint to load.")
 args_cli = parser.parse_args()
-args_cli.task = "Isaac-Elevator-Franka-v0"
 # launch the simulator
 config = {"headless": args_cli.headless}
 simulation_app = SimulationApp(config)
@@ -38,16 +37,16 @@ import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
 from utils.mimic_utils import RobomimicWrapper
-from utils.env_presets import modify_cfg_to_robomimic, modify_cfg_to_task_push_btn
+from utils.env_presets import modify_cfg_to_robomimic, modify_cfg_according_to_task
 
 def main():
     """Run a trained policy from robomimic with Isaac Orbit environment."""
     # parse configuration
-    env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=1)
+    env_cfg = parse_env_cfg("Isaac-Elevator-Franka-v0", use_gpu=not args_cli.cpu, num_envs=1)
     # modify configuration
     # env_cfg.control.control_type = "inverse_kinematics"
     # env_cfg.control.inverse_kinematics.command_type = "pose_rel"
-    modify_cfg_to_task_push_btn(env_cfg)
+    modify_cfg_according_to_task(env_cfg, args_cli.task)
     modify_cfg_to_robomimic(env_cfg)
     env_cfg.env.episode_length_s = 10.0
     policy_config_update = dict(
@@ -59,7 +58,7 @@ def main():
     )
 
     # create environment
-    env = gym.make(args_cli.task, cfg=env_cfg, headless=False)
+    env = gym.make("Isaac-Elevator-Franka-v0", cfg=env_cfg, headless=False)
 
     # acquire device
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
