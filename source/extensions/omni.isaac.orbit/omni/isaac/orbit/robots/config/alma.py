@@ -62,7 +62,9 @@ ALMA_CFG = MobileManipulatorCfg(
         tool_num_dof=0,
         tool_sites_names=None,
     ),
-    ee_info=MobileManipulatorCfg.EndEffectorFrameCfg(body_name="dynaarm_WRIST_2"),
+    ee_info=MobileManipulatorCfg.EndEffectorFrameCfg(body_name="dynaarm_WRIST_2", 
+        pos_offset=(0.0, 0.0, 0.03) # little ball for pushing
+    ), 
     init_state=MobileManipulatorCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.0),
         dof_pos={
@@ -73,7 +75,7 @@ ALMA_CFG = MobileManipulatorCfg(
             # dynaarm
             "SH_ROT": 0.0,
             "SH_FLE": -1.0,
-            "EL_FLE": 2.4,
+            "EL_FLE": 2.5,
             "FA_ROT": 0.0,
             "WRIST_1": 0.0,
             "WRIST_2": 0.0,
@@ -102,7 +104,8 @@ ALMA_CFG = MobileManipulatorCfg(
         "base_zr": ActuatorGroupCfg(
             dof_names=["world_body_p_z", "world_body_r_z"],
             model_cfg=ImplicitActuatorCfg(velocity_limit=100, torque_limit=50),
-            control_cfg=ActuatorControlCfg(command_types=["p_abs"], stiffness={".*": 5e4}, damping={".*": 1e4}),
+            control_cfg=ActuatorControlCfg(command_types=["p_abs"], stiffness={".*": 5e4}, damping={".*": 1e4},
+                dof_pos_offset={"world_body_p_z": 0.6}),
         ),
         # arm
         "dynaarm_arm": ActuatorGroupCfg(
@@ -116,7 +119,7 @@ ALMA_CFG = MobileManipulatorCfg(
                 dof_pos_offset={
                     "SH_ROT": 0.0,
                     "SH_FLE": -1.0, # 0.0,  # -0.7,
-                    "EL_FLE": 2.4 # 0.0,  # 1.4,
+                    "EL_FLE": 2.5 # 0.0,  # 1.4,
                 },
             ),
         ),

@@ -86,7 +86,7 @@ ACTOR_CONFIGS = {
             "debug_vis": False,
             ## ee target is a trajectory to follow
             "ee_target_init_bias": (-0.1, 0.35, -0.1),
-            "ee_target_end_bias": (0,  -0.01, 0),
+            "ee_target_end_bias": (0.0, 0.02, 0.0), # y is the button move direction
             "ee_target_end_std": (0,  0, 0),
             "ee_target_alpha": 0.05, # speed of target update
             ## base target is based on the target pos of button
@@ -263,7 +263,6 @@ class IK_Actor(ActorWrapperBase):
             self.robot.data.ee_jacobian,
             self.robot.data.arm_dof_pos,
         )
-        arm_actions -= self.robot.data.actuator_pos_offset[:, 4:10]
 
         ee_positions = self.ik_controller.desired_ee_pos + self.env.envs_positions
         ee_orientations = self.ik_controller.desired_ee_rot
@@ -274,6 +273,7 @@ class IK_Actor(ActorWrapperBase):
         alpha = self.actor_cfg["base_target_alpha"]
         base_actions = (1-alpha) * current_dof[:,:4] + alpha * self.target_base_pose
         robot_actions = torch.cat([base_actions, arm_actions],axis = 1)
+        robot_actions -= self.robot.data.actuator_pos_offset
         return self.postprocess_action(robot_actions)
 
     def reset_idx(self, env_ids = None):
@@ -314,6 +314,7 @@ def main():
 
     if args_cli.task.lower() == "movetobtn":
         ACTOR_CONFIGS["ik"]["actor_cfg"]["base_target_end_std"] = (0.001, 0.001, 0.001, 0.001)
+        ACTOR_CONFIGS["ik"]["actor_cfg"]["base_target_end_bias"] = (0,  0.85, -0.4)
 
     EXP_CONFIGS["wrapper_cfg"] = ACTOR_CONFIGS[EXP_CONFIGS["actor_type"]]
     if(EXP_CONFIGS["actor_type"] == "human"):    

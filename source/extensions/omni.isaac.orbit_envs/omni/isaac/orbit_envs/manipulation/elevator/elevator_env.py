@@ -924,7 +924,7 @@ class ElevatorEnv(IsaacEnv):
                 self.cfg.control.inverse_kinematics, self.robot.count, self.device
             )
             self.num_actions = self.robot.base_num_dof + self._ik_controller.num_actions
-            self.ee_des_pos_base = torch.tensor([[0.32, 0, 0.4]], device=self.device).tile((self.num_envs, 1))
+            self.ee_des_pos_base = torch.tensor([[0.35, 0, 0.4]], device=self.device).tile((self.num_envs, 1))
         elif self.cfg.control.control_type == "default":
             self.num_actions = self.robot.base_num_dof + self.robot.arm_num_dof
         elif self.cfg.control.control_type == "base":
