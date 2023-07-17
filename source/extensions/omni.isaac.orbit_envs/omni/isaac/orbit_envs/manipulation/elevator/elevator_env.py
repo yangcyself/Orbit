@@ -1228,13 +1228,9 @@ class ElevatorEnv(IsaacEnv):
 class ElevatorObservationManager(ObservationManager):
     """Reward manager for single-arm reaching environment."""
 
-    def dof_pos_normalized(self, env: ElevatorEnv):
+    def dof_pos(self, env: ElevatorEnv):
         """DOF positions for the arm normalized to its max and min ranges."""
-        return scale_transform(
-            env.robot.data.dof_pos,
-            env.robot.data.soft_dof_pos_limits[:, :, 0],
-            env.robot.data.soft_dof_pos_limits[:, :, 1],
-        )
+        return env.robot.data.dof_pos
 
     def dof_vel(self, env: ElevatorEnv):
         """DOF velocity of the arm."""

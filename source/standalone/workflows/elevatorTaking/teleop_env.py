@@ -38,6 +38,9 @@ from omni.isaac.orbit.devices import Se3Keyboard, Se3Gamepad
 import omni.isaac.contrib_envs  # noqa: F401
 import omni.isaac.orbit_envs  # noqa: F401
 from omni.isaac.orbit_envs.utils import parse_env_cfg
+from utils.env_presets import (modify_cfg_according_to_button_panel, 
+            modify_cfg_according_to_button_task, 
+            modify_cfg_according_to_task)
 
 
 CHECK_SAME_OBS_REWARD = False
@@ -53,8 +56,8 @@ def pre_process_actions(cmd: torch.Tensor, gripper_command: bool) -> torch.Tenso
     delta_pose[:, 2] = 2*cmd[:, 0] # tool z
     delta_pose[:, 1] = -2*cmd[:, 5] # tool y
     base_dpos[:, 2] = cmd[:, 6] # base z
-    base_dpos[:, 0] = - cmd[:, 4] # base x
-    base_dpos[:, 1] = cmd[:, 3] # base y
+    base_dpos[:, 0] = - 5* cmd[:, 4] # base x
+    base_dpos[:, 1] = 5* cmd[:, 3] # base y
     gripper_vel = torch.zeros(cmd.shape[0], 1, device=delta_pose.device)
     gripper_vel[:] = -1.0 if gripper_command else 1.0
     # compute actions
@@ -90,10 +93,15 @@ def main():
     """Running keyboard teleoperation with Orbit manipulation environment."""
     # parse configuration
     env_cfg = parse_env_cfg(args_cli.task, use_gpu=not args_cli.cpu, num_envs=args_cli.num_envs)
+    modify_cfg_according_to_button_panel(env_cfg, "panel01")
+    modify_cfg_according_to_button_task(env_cfg, "in_right", "movetobtn")
+    env_cfg.initialization.robot.position_cat = "see-point"
+    # modify_cfg_according_to_task(env_cfg, "pushbtn")
     # modify configuration
     env_cfg.control.control_type = "inverse_kinematics"
     env_cfg.terminations.episode_timeout = False
     env_cfg.terminations.is_success = False
+    env_cfg.terminations.collision = False
     env_cfg.observations.low_dim.enable_corruption=False
     if CHECK_SAME_OBS_REWARD:
         env_cfg.observation_grouping = {"privilege":None, "low_dim":None, "debug": None}
@@ -163,10 +171,7 @@ def main():
             episodic_rewards[k] = v.clone()
 
         print_info_dict = {
-            "semantic": (
-                obs["semantic"]["hand_camera_semantic"][0].dtype,
-                obs["semantic"]["hand_camera_semantic"][0].max(),
-                obs["semantic"]["hand_camera_semantic"][0].min())
+            "pos": obs["privilege"]["dof_pos"][0,:4].cpu().numpy()
         }
         
         if(CHECK_SAME_OBS_REWARD):

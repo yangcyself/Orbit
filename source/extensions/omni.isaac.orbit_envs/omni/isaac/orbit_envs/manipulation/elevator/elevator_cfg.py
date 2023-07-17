@@ -40,7 +40,7 @@ class ButtonPanelCfg:
     symbols = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "up", "down"]
     translation = (0, -0.75, 1.2)
     orientation = (0.0, 0.0, math.sqrt(1 / 2), math.sqrt(1 / 2))
-    btn_light_cond = 3 # light on the button with continuous pushing of 5 frames
+    btn_light_cond = 5 # light on the button with continuous pushing of 5 frames
 
 ##
 # MDP settings
@@ -65,8 +65,8 @@ class InitializationCfg:
         # see-point: randomize position in the uniform range and ensure the robot can see the point
 
         # randomize position
-        position_uniform_min = [0.9, 0.3, 0.3, -3.1]  # position (x,y,z,yaw)
-        position_uniform_max = [2.1, 2.,  0.7, 0.]  # position (x,y,z,yaw)
+        position_uniform_min = [0.9, 0.3, -0.3, -3.1]  # position (x,y,z,yaw)
+        position_uniform_max = [2.1, 2.,   0.1, 0.]  # position (x,y,z,yaw)
         # see point configs
         see_point_target = [1.5, 1.5]  # target point (x,y)
         see_point_FOV = 0.5  # half field of view of the robot (in radian)
@@ -137,7 +137,7 @@ class ObservationsCfg:
         # observation terms
         dof_pos_obsframe = {"scale": 1.0, "noise": {"name": "uniform", "min": -0.01, "max": 0.01},
                 "normalizer": { # the normalizer of dof pos, should match robomimic conterparts
-                    "mean": [0, 0, 0.6,   0, 0, 0.5,  0, 0, -0.5,  1.5],
+                    "mean": [0, 0, 0.0,   0, 0, 0.5,  0, 0, -0.5,  1.5],
                     "std":  [1, 1, 1.0, 1.0, 2,   2,  2, 2, 16.0, 16.0]
                 }
         }
@@ -155,7 +155,7 @@ class ObservationsCfg:
         """Observations for privileged information."""
         enable_corruption: bool = False
         # observation terms
-        dof_pos_normalized = {"scale": 1.0}
+        dof_pos = {"scale": 1.0}
         dof_vel = {"scale": 0.5}
         ee_position = {}
         # elevator
