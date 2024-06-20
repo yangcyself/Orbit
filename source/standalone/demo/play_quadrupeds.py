@@ -44,9 +44,10 @@ from omni.isaac.core.utils.viewports import set_camera_view
 
 import omni.isaac.orbit.utils.kit as kit_utils
 from omni.isaac.orbit.markers import PointMarker, StaticMarker
-from omni.isaac.orbit.robots.config.anymal import ANYMAL_B_CFG, ANYMAL_C_CFG
+from omni.isaac.orbit.robots.config.anymal import ANYMAL_B_CFG, ANYMAL_C_CFG, ALMA_CFG
 from omni.isaac.orbit.robots.config.unitree import UNITREE_A1_CFG
 from omni.isaac.orbit.robots.legged_robot import LeggedRobot
+from omni.isaac.orbit.robots.mobile_manipulator import LeggedMobileManipulator
 
 """
 Helpers
@@ -105,6 +106,10 @@ def main():
     robot_a = LeggedRobot(cfg=UNITREE_A1_CFG)
     robot_a.spawn("/World/Unitree_A1/Robot_1", translation=(1.5, 0.5, 0.42))
     robot_a.spawn("/World/Unitree_A1/Robot_2", translation=(1.5, 1.5, 0.42))
+    # -- alma
+    robot_arm = LeggedMobileManipulator(cfg=ALMA_CFG)
+    robot_arm.spawn("/World/Alma/Robot_1", translation=(0.0, 0.5, 0.65))
+    robot_arm.spawn("/World/Alma/Robot_2", translation=(0.0, 1.5, 0.65))
     # design props
     design_scene()
 
@@ -115,17 +120,19 @@ def main():
     robot_b.initialize("/World/Anymal_b/Robot.*")
     robot_c.initialize("/World/Anymal_c/Robot.*")
     robot_a.initialize("/World/Unitree_A1/Robot.*")
+    robot_arm.initialize("/World/Alma/Robot.*")
     # Reset states
     robot_b.reset_buffers()
     robot_c.reset_buffers()
     robot_a.reset_buffers()
+    robot_arm.reset_buffers()
 
     # Debug visualization markers.
     # -- feet markers
     feet_markers: List[StaticMarker] = list()
     feet_contact_markers: List[PointMarker] = list()
     # iterate over robots
-    for robot_name in ["Anymal_b", "Anymal_c", "Unitree_A1"]:
+    for robot_name in ["Anymal_b", "Anymal_c", "Unitree_A1", "Alma"]:
         # foot
         marker = StaticMarker(f"/World/Visuals/{robot_name}/feet", 4 * robot_c.count, scale=(0.1, 0.1, 0.1))
         feet_markers.append(marker)
@@ -138,6 +145,7 @@ def main():
 
     # dummy action
     actions = torch.zeros(robot_a.count, robot_a.num_actions, device=robot_a.device)
+    actions_arm = torch.zeros(robot_arm.count, robot_arm.num_actions, device=robot_a.device)
 
     # Define simulation stepping
     sim_dt = sim.get_physics_dt()
@@ -158,17 +166,19 @@ def main():
             sim_time = 0.0
             count = 0
             # reset dof state
-            for robot in [robot_a, robot_b, robot_c]:
+            for robot in [robot_a, robot_b, robot_c, robot_arm]:
                 dof_pos, dof_vel = robot.get_default_dof_state()
                 robot.set_dof_state(dof_pos, dof_vel)
                 robot.reset_buffers()
             # reset command
             actions = torch.zeros(robot_a.count, robot_a.num_actions, device=robot_a.device)
+            actions_arm = torch.zeros(robot_arm.count, robot_arm.num_actions, device=robot_a.device)
             print(">>>>>>>> Reset!")
         # apply actions
         robot_b.apply_action(actions)
         robot_c.apply_action(actions)
         robot_a.apply_action(actions)
+        robot_arm.apply_action(actions_arm)
         # perform step
         sim.step()
         # update sim-time
@@ -180,9 +190,10 @@ def main():
             robot_b.update_buffers(sim_dt)
             robot_c.update_buffers(sim_dt)
             robot_a.update_buffers(sim_dt)
+            robot_arm.update_buffers(sim_dt)
             # update marker positions
             for foot_marker, contact_marker, robot in zip(
-                feet_markers, feet_contact_markers, [robot_b, robot_c, robot_a]
+                feet_markers, feet_contact_markers, [robot_b, robot_c, robot_a, robot_arm]
             ):
                 # feet
                 foot_marker.set_world_poses(
